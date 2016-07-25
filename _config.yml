@@ -1,0 +1,29 @@
+# Blog settings
+permalink: /:categories/:title/
+lang: 'zh-cmn-Hans'
+
+
+# My variables
+name: 鲍捷的博客
+google_verification: null
+author: 鲍捷
+plus: null
+
+
+# File management
+include: [".htaccess"]
+exclude: ["README.md", "LICENSE"]
+
+
+# Sass
+sass:
+  style: :compressed
+  sass_dir: _sass
+
+
+# Markdown
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+highlighter: rouge
