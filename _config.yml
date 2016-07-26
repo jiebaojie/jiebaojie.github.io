@@ -1,7 +1,5 @@
 # Blog settings
 permalink: /:categories/:title/
-lang: 'zh-cmn-Hans'
-
 
 # My variables
 name: 鲍捷的博客
