@@ -1,27 +1,59 @@
-# Blog settings
-permalink: /:categories/:title/
+# Site settings
+title: Bao Jie's Blog
+SEOTitle: 鲍捷的博客 | Bao Jie's Blog
+header-img: 
+tagline: ''
+sidebar_image: 
+lang: 'zh-cmn-Hans'
+url: http://www.jiebaojie.com/
+author: Bao Jie
+plus: 
+description: "鲍捷的博客"
+keyword: "鲍捷的博客"
 
-# My variables
-name: 鲍捷的博客
-google_verification: null
-author: 鲍捷
-plus: null
-
-
-# File management
-include: [".htaccess"]
-exclude: ["README.md", "LICENSE"]
-
-
-# Sass
-sass:
-  style: :compressed
-  sass_dir: _sass
-
-
-# Markdown
+# Build settings
 markdown: kramdown
-kramdown:
-  input: GFM
-  hard_wrap: false
 highlighter: rouge
+baseurl: # the subpath of your site, e.g. /blog/
+
+permalink:   /:categories/:title/
+paginate: 8
+paginate_path: "/page:num/"
+
+highlighter: rouge
+permalink: pretty
+paginate: 10
+exclude: ["README.md"]
+anchorjs: true                          # if you want to customize anchor. check out line:181 of `post.html`
+
+# Duoshuo settings
+duoshuo_username: Bao Jie
+# Share component is depend on Comment so we can NOT use share only.
+duoshuo_share: true                     # set to false if you want to use Comment without Sharing
+
+
+# Sidebar settings
+sidebar: true                           # whether or not using Sidebar.
+sidebar-about-description: "我本科和研究生毕业于同济大学，目前就职于百度——程序化广告部，从事研发工作。关注后端Web技术，大数据技术，广告系统技术等。"
+sidebar-avatar:     # use absolute URL, seeing it's used in both `/` and `/about/`
+
+# Featured Tags
+featured-tags: true                     # whether or not using Feature-Tags
+featured-condition-size: 0              # A tag will be featured if the size of it is more than this condition value
+
+# SNS settings
+github_username: jiebaojie
+
+# Friends
+friends: [
+    {
+        title: "我的Github",
+        href: "https://github.com/jiebaojie"
+    },{
+        title: "Ray's Blog",
+        href: "http://www.predatorray.me/"
+    },{
+        title: "Yin Haomin's Blog",
+        href: "http://www.yinhaomin.com/"
+    }
+]
