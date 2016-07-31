@@ -47,13 +47,16 @@ github_username: jiebaojie
 # Friends
 friends: [
     {
-        title: "我的Github",
-        href: "https://github.com/jiebaojie"
+        title: "neo时刻准备着",
+        href: "http://neoremind.com"
     },{
         title: "Ray's Blog",
         href: "http://www.predatorray.me/"
     },{
         title: "Yin Haomin's Blog",
         href: "http://www.yinhaomin.com/"
+    },{
+        title: "Knight's Blog",
+        href: "http://www.liaoqiqi.com/"
     }
 ]
