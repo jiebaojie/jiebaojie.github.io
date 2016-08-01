@@ -51,6 +51,7 @@ layout: default
 
                 <hr>
                 
+                {% if page.comments %}
                 <!-- 多说评论框 start -->
                     <div class="ds-thread" data-thread-key="{{page.id}}" data-title="{{page.title}}" data-url="{{site.url}}{{site.baseurl}}{{page.url}}"></div>
                 <!-- 多说评论框 end -->
@@ -67,6 +68,7 @@ layout: default
                     })();
                     </script>
                 <!-- 多说公共JS代码 end -->
+                {% endif %}
 
                 <ul class="pager">
                     {% if page.previous.url %}
