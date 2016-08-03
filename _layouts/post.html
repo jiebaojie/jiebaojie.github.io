@@ -25,11 +25,22 @@ layout: default
         <div class="row">
             <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
                 <div class="post-heading">
-                    <h1>{{ page.title }}</h1>
-                    
-                    <h2 class="subheading">{{ page.subtitle }}</h2>
 
+                    {% if page.notes %}
+                    <h1>读书笔记——</h1>
+                    {% else %}
+                    <h1>{{ page.title }}</h1>
+                    {% endif %}
+                    
+                    {% if page.notes %}
+                    <h2 class="subheading">{{ page.subtitle }}</h2>
+                    {% endif %}
+
+                    {% if page.notes %}
+                    <span class="meta">作者：{{ page.author }}</span>
+                    {% else %}
                     <span class="meta">Posted by {% if page.author %}{{ page.author }}{% else %}{{ site.title }}{% endif %} on {{ page.date | date: "%B %-d, %Y" }}</span>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -109,6 +120,7 @@ layout: default
         {% endif %}
 
     <!-- Sidebar Container -->
+            {% if page.notes != true %}
             <div class="
                 col-lg-8 col-lg-offset-2
                 col-md-10 col-md-offset-1
@@ -143,6 +155,7 @@ layout: default
                 </ul>
                 {% endif %}
             </div>
+            {% endif %}
         </div>
     </div>
 </article>
