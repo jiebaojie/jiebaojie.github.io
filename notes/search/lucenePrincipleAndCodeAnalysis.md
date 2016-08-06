@@ -316,3 +316,62 @@ Format：
 *   由于 Lucene 是在不断开发过程中的，因而不同版本的 Lucene，其索引文件格式也不尽相同，于是规定一个版本号。
 *   Lucene 2.1 此值-3，Lucene 2.9 时，此值为-9。
 *   当用某个版本号的 IndexReader 读取另一个版本号生成的索引的时候，会因为此值不同而报错。
+
+Version：
+
+*   索引的版本号，其初始值大多数情况下从索引文件里面读出，仅仅在索引开始创建的时候，被赋予当前的时间，取得一个唯一值。
+
+NameCount：
+
+*   是下一个新段(Segment)的段名。
+*   所有属于同一个段的索引文件都以段名作为文件名，一般为_0.xxx, _0.yyy, _1.xxx, _1.yyy ......
+*   新生成的段的段名一般为原有最大段名加一。
+
+SegCount：
+
+*   段（Segment）的个数。
+
+SegCount个段的元数据信息：
+
+*   SegName
+    *   段名，所有属于同一个段的文件都有以段名作为文件名。
+    *   第一个段的段名为"_0"，第二个段的段名为"_1"
+*   SegSize
+    *   此段中包含的文档数
+    *   然而此文档数是包括已经删除，又没有 optimize 的文档的，因为在 optimize
+之前，Lucene 的段中包􏰀了所有被索引过的文档，而被删除的文档是保存在.del 文件中的，在搜索的过程中，是先从段中读到了被删除的文档，然后再用.del中的标志,将这篇文档过滤掉。
+*   DelGen
+    *   .del文件的版本号
+    *   Lucene 中，在 optimize 之前，删除的文档是保存在.del 文件中的。
+    *   DelGen 是每当 IndexWriter 向索引文件中提交删除操作的时候，加 1，并生成 新的.del 文件。
+*   DocStoreOffset
+*   DocStoreSegment
+*   DocStoresCompoundFile
+    *   对于域(Stored Field)和词向量(Term Vector)的存储可以有不同的方式，即可以每个段(Segment)单独存储自己的域和词向量信息，也可以多个段共享域和词向量，把它们存储到一个段中去。
+    *   如果 DocStoreOffset 为-1，则此段单独存储自己的域和词向量。DocStoreSegment 和 DocStoreIsCompoundFile 在此处不被保存。
+    *   如果 DocStoreOffset 不为-1，则 DocStoreSegment 保存了共享的段的名字，DocStoreOffset 则为此段的域及词向量信息在共享段中的偏移量。
+*   HasSingleNormFile
+    *   在搜索的过程中，标准化因子(Normalization Factor)会影响文档最后的评分。
+    *   不同的文档重要性不同，不同的域重要性也不同。因而每个文档的每个域都可以有自己的标准化因子。
+    *   如果 HasSingleNormFile 为 1，则所有的标准化因子都是存在.nrm 文件中的。
+    *   如果 HasSingleNormFile 不是 1，则每个域都有自己的标准化因子文件.fN
+*   NumField
+    *   域的数量
+*   NormGen
+    *   如果每个域有自己的标准化因子文件，则此数组描述了每个标准化因子文件的版本号，也即.fN 的 N。
+*   isCompoundFile
+    *   是否保存为复合文件，也即把同一个段中的文件按照一定格式，保存在一个文件当中，这样可以减少每次打开文件的个数。
+*   DeletionCount
+    *   记录了此段中删除的文档的数目。
+*   HasProx
+    *   如果至少有一个段 omitTf 为 false，也即词频(term freqency)需要被保存，则HasProx 为 1,否则为 0。
+*   Diagnostics
+    *   调试信息。
+
+User map data
+
+*   保存了用户从字符串到字符串的映射 Map<String,String>
+
+CheckSum
+
+*   此文件 segment_N 的校验和。
