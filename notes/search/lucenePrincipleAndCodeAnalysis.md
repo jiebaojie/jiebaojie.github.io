@@ -375,3 +375,42 @@ User map data
 CheckSum
 
 *   此文件 segment_N 的校验和。
+
+##### 4.1.2 域(Field)的元数据信息(.fnm)
+
+一个段(Segment)包􏰀多个域，每个域都有一些元数据信息，保存在.fnm 文件中，.fnm 文件 的格式如下:
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/field_meta.png)
+
+FNMVersion：
+
+*   是fnm文件的版本号，对于 Lucene 2.9 为-2。
+
+FieldsCount
+
+*   域的数目
+
+一个数组的域（Fields）
+
+*   FieldName：域名，如"title"，"modified"，"content"等。
+*   FieldBits：一系列标志位，表明对此域的索引方式
+    *   最低位：1 表示此域被索引，0 则不被索引。所谓被索引，也即放到倒排表中去。
+    *   倒数第二位：1 表示保存词向量，0 为不保存词向量。
+    *   倒数第三位：1 表示在词向量中保存位置信息。
+    *   倒数第四位：1 表示在词向量中保存偏移量信息。
+    *   倒数第五位：1 表示不保存标准化因子
+    *   倒数第六位：是否保存 payload
+
+位置(Position)和偏移量(Offset)的区􏰁别：
+
+*   位置是基于词 Term 的，偏移量是基于字母或汉字的。
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/position_offset.png)
+
+索引域(Indexed)和存储域(Stored)的区􏰁别：
+
+*   一个域为什么会被存储(store)而不被索引(Index)呢?在一个文档中的所有信息中，有这样一部分信息，可能不想被索引从而可以搜索到，但是当这个文档由于其他的信息被搜索到时，可以同其他信息一同返回。
+
+##### 4.1.3 域(Field)的数据信息(.fdt,.fdx)
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/field_data.png) 
