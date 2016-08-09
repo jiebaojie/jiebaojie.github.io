@@ -414,3 +414,23 @@ FieldsCount
 ##### 4.1.3 域(Field)的数据信息(.fdt,.fdx)
 
 ![](/img/notes/search/lucenePrincipleAndCodeAnalysis/field_data.png) 
+
+域数据文件（fdt）：
+
+*   真正保存存储域(stored field)信息的是fdt文件
+*   在一个段(segment)中总共有 segment size 篇文档，所以 fdt 文件中共有 segment size个项，每一项保存一篇文档的域的信息
+*   对于每一篇文档，一开始是一个 fieldcount，也即此文档包􏰁的域的数目，接下来是 fieldcount 个项，每一项保存一个域的信息。
+*   对于每一个域，fieldnum 是域号，接着是一个 8 位的 byte，最低一位表示此域是否分词(tokenized)，倒数第二位表示此域是保存字符串数据还是二进制数据，倒数第 三位表示此域是否被压缩，再接下来就是存储域的值。
+
+域索引文件（fdx）：
+
+*   由域数据文件格式我们知道，每篇文档包􏰁的域的个数，每个存储域的值都是不一样的，因而域数据文件中 segment size 篇文档,每篇文档占用的大小也是不一样的, 那么如何在 fdt 中辨􏰀每一篇文档的起始地址和终止地址呢，如何能够更快的找到 第 n 篇文档的存储域的信息呢?就是要借助域索引文件。
+*   域索引文件也总共有 segment size 个项，每篇文档都有一个项，每一项都是一个 long,大小固定，每一项都是对应的文档在 fdt 文件中的起始地址的偏移量,这样 如果我们想找到第 n 篇文档的存储域的信息，只要在 fdx 中找到第 n 项，然后按照 取出的 long 作为偏移量，就可以在 fdt 文件中找到对应的存储域的信息。
+
+##### 4.1.4 词向量(TermVector)的数据信息(.tvx,.tvd,.tvf)
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/term_vector.png) 
+
+词向量信息是从索引(index)到文档(document)到域(field)到词(term)的正向信息，有了词向量信息，我们就可以得到一篇文档包含􏰁哪些词的信息。
+
+词向量索引文件(tvx)
