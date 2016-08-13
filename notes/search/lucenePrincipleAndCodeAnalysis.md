@@ -427,10 +427,214 @@ FieldsCount
 *   由域数据文件格式我们知道，每篇文档包􏰁的域的个数，每个存储域的值都是不一样的，因而域数据文件中 segment size 篇文档,每篇文档占用的大小也是不一样的, 那么如何在 fdt 中辨􏰀每一篇文档的起始地址和终止地址呢，如何能够更快的找到 第 n 篇文档的存储域的信息呢?就是要借助域索引文件。
 *   域索引文件也总共有 segment size 个项，每篇文档都有一个项，每一项都是一个 long,大小固定，每一项都是对应的文档在 fdt 文件中的起始地址的偏移量,这样 如果我们想找到第 n 篇文档的存储域的信息，只要在 fdx 中找到第 n 项，然后按照 取出的 long 作为偏移量，就可以在 fdt 文件中找到对应的存储域的信息。
 
-##### 4.1.4 词向量(TermVector)的数据信息(.tvx,.tvd,.tvf)
+##### 4.1.4 词向量(Term Vector)的数据信息(.tvx,.tvd,.tvf)
 
 ![](/img/notes/search/lucenePrincipleAndCodeAnalysis/term_vector.png) 
 
 词向量信息是从索引(index)到文档(document)到域(field)到词(term)的正向信息，有了词向量信息，我们就可以得到一篇文档包含􏰁哪些词的信息。
 
 词向量索引文件(tvx)
+
+*   一个段(segment)包􏰀 N 篇文档，此文件就有 N 项，每一项代表一篇文档。
+*   每一项包􏰀两部分信息：第一部分是词向量文档文件(tvd)中此文档的偏移量，第二部分是词向量域文件(tvf)中此文档的第一个域的偏移量。
+
+词向量文档文件(tvd)
+
+*   一个段(segment)包􏰀 N 篇文档,此文件就有 N 项，每一项包􏰀了此文档的所有的域的信息。
+*   每一项首先是此文档包􏰀的域的个数 NumFields，然后是一个 NumFields 大小的数组，数组的每一项是域号。然后是一个(NumFields - 1)大小的数组，由前面我们知 道，每篇文档的第一个域在 tvf 中的偏移量在 tvx 文件中保存，而其他(NumFields - 1) 个域在 tvf 中的偏移量就是第一个域的偏移量加上这(NumFields - 1)个数组的每一 项的值。
+
+词向量域文件（tvf）
+
+*   此文件包􏰀了此段中的所有的域，并不对文档做区分，到底第几个域到第几个域是属于那篇文档,是由 tvx 中的第一个域的偏移量以及 tvd 中的(NumFields - 1)个域的偏移量来决定的。
+*   对于每一个域，首先是此域包􏰀的词的个数 NumTerms,然后是一个 8 位的 byte，最后一位是指定是否保存位置信息,倒数第二位是指定是否保存偏移量信息。然后 是 NumTerms 个项的数组,每一项代表一个词(Term)，对于每一个词,由词的文本 TermText，词频 TermFreq(也即此词在此文档中出现的次数)，词的位置信息，词的偏移量信息。
+
+#### 4.2 反向信息
+
+反向信息是索引文件的核心，也即反向索引。
+
+反向索引包括两部分，左面是词典(Term Dictionary)，右面是倒排表(Posting List)。
+
+在 Lucene 中，这两部分是分文件存储的,词典是存储在 tii,tis 中的，倒排表又包括两部分，一部分是文档号及词频，保存在 frq 中，一部分是词的位置信息，保存在 prx 中。
+
+Term Dictionary(til, tis)：
+
+*   Frequencies(.frq)
+*   Positions(.prx)
+
+##### 4.2.1 词典(tis)及词典索引(tii)信息
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/tis_tii.png) 
+
+在词典中，所有的词是按照字典顺序排序的。
+
+词典文件（tis）：
+
+*   TermCount：词典中包􏰀的总的词数
+*   IndexInterval：为了加快对词的查找速度,也应用类似跳跃表的结构，假设IndexInterval 为 4，则在词典索引(tii)文件中保存第 4 个,第 8 个，第 12 个词，这样可以加快在词典文件中查找词的速度。
+*   SkipInterval：倒排表无论是文档号及词频，还是位置信息，都是以跳跃表的结构存在的，SkipInterval 是跳跃的步数。
+*   MaxSkipLevels：跳跃表是多层的，这个值指的是跳跃表的最大层数。
+*   TermCount 个项的数组，每一项代表一个词，对于每一个词,以前缀后缀规则存放词的文本信息(PrefixLength + Suffix)，词属于的域的域号(FieldNum)，有多少篇文档 包􏰀此词(DocFreq)，此词的倒排表在 frq,prx 中的偏移量(FreqDelta, ProxDelta)，此词的倒排表的跳跃表在 frq 中的偏移量(SkipDelta)，这里之所以用 Delta，是应用差值规则。
+
+词典索引文件（tii）：
+
+*   词典索引文件是为了加快对词典文件中词的查找速度，保存每隔 IndexInterval 个词。
+*   词典索引文件是会被全部加载到内存中去的。
+*   IndexTermCount = TermCount / IndexInterval:词典索引文件中包􏰀的词数。
+*   IndexInterval 同词典文件中的 IndexInterval。
+*   SkipInterval 同词典文件中的 SkipInterval。
+*   MaxSkipLevels 同词典文件中的 MaxSkipLevels。
+*   IndexTermCount 个项的数组，每一项代表一个词,每一项包括两部分，第一部分是词本身(TermInfo)，第二部分是在词典文件中的偏移量(IndexDelta)。假设 IndexInterval 为 4，此数组中保存第 4 个，第 8 个，第 12 个词......
+
+##### 4.2.2 文档号及词频（frq）信息
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/frq.png) 
+
+文档号及词频文件里面保存的是倒排表，是以跳跃表形式存在的。
+
+*   此文件包􏰀 TermCount 个项，每一个词都有一项，因为每一个词都有自己的倒排表。
+*   对于每一个词的倒排表都包括两部分，一部分是倒排表本身，也即一个数组的文档号及词频，另一部分是跳跃表，为了更快的访问和定位倒排表中文档号及词频的位置。
+
+##### 4.2.3 词位置（prx）信息
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/prx.png) 
+
+词位置信息也是倒排表，也是以跳跃表形式存在的。
+
+*   此文件包􏰀 TermCount 个项,每一个词都有一项，因为每一个词都有自己的词位置倒排表。
+*   对于每一个词的都有一个 DocFreq 大小的数组，每项代表一篇文档，记录此文档中此词出现的位置。这个文档数组也是和 frq 文件中的跳跃表有关系的
+*   对于每一篇文档，可能包􏰀一个词多次，因而有一个 Freq 大小的数组，每一项代表此词在此文档中出现一次，则有一个位置信息。
+*   每一个位置信息包􏰀：PositionDelta(采用差值规则)，还可以保存 payload，应用或然跟随规则。
+
+#### 4.3 其他信息
+
+##### 4.3.1 标准化因子文件（nrm）
+
+标准化因子（Normalization Factor）在索引过程总的计算如下：
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/nrm.png)
+
+它包括三个参数：
+
+*   Document boost：此值越大，说明此文档越重要。
+*   Field boost：此域越大，说明此域越重要。
+*   lengthNorm(field) = (1.0 / Math.sqrt(numTerms))：一个域中包含的Term总数越多，也即文档越长，此值越小，文档越短，此值越大。
+
+一个词(Term)出现在不同的文档或不同的域中，标准化因子不同。 比如有两个文档，每个文档有两个域，如果不考虑文档长度，就有四种排列组合，在重要文档的重要域中，在重要文档的非重要域中，在非重要文档的重要域中，在非重要文档的非重要域中，四种组合，每种有不同的标准化因子。
+
+在 Lucene 中，标准化因子共保存了(文档数目乘以域数目)个，格式如下：
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/nrm_format.png) 
+
+标准化因子文件(Normalization Factor File: nrm)：
+
+*   NormsHeader：字符串“NRM”外加 Version，依 Lucene 的版本的不同而不同。
+*   接着是一个数组，大小为 NumFields，每个 Field 一项，每一项为一个 Norms。
+*   Norms 也是一个数组，大小为 SegSize，即此段中文档的数量，每一项为一个 Byte，表示一个浮点数，其中 0~2 为尾数，3~8 为指数。
+
+##### 4.3.2 删除文档文件（del）
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/del.png) 
+
+### 五、总体结构
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/index_structure.png)
+
+Lucene 索引文件的整体结构：
+
+*  属于整个索引(Index)的 segment.gen,segment_N，其保存的是段(segment)的元数据信息，然后分多个 segment 保存数据信息，同一个 segment 有相同的前缀文件名。
+*  对于每一个段，包􏰀域信息,词信息,以及其他信息(标准化因子,删除文档)
+*  域信息也包括域的元数据信息，在 fnm 中，域的数据信息，在 fdx,fdt 中。
+*  词信息是反向信息，包括词典(tis, tii)，文档号及词频倒排表(frq)，词位置倒排表(prx)。
+
+## 第四章：Lucene索引过程分析
+
+对于 Lucene 的索引过程，除了将词(Term)写入倒排表并最终写入 Lucene 的索引文件外，还包括分词(Analyzer)和合并段(merge segments)的过程
+
+### 一、索引过程体系结构
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/index_process_architecture.png)
+
+索引过程，就是图中所示的索引链的过程。
+
+*   基本索引链
+*   线程索引链
+*   域索引链
+
+### 二、详细索引过程
+
+#### 1、创建IndexWriter对象
+
+IndexWriter对象主要包含以下几方面的信息：
+
+*   用于索引文档
+    *   Directory directory; 指向索引文件夹
+    *   Analyzer analyzer; 分词器
+    *   Similarity similarity = Similarity.getDefault(); 影响打分的标准化因子(normalization factor)部分，对文档的打分分两个部分，一部分是索引阶段计算的，与查询语句无关，一部分是搜索阶段计算的，与查询语句相关。
+    *   SegmentInfos segmentInfos = new SegmentInfos(); 保存段信息，和segments_N 中的信息几乎一一对应。
+    *   IndexFileDeleter deleter; 此对象不是用来删除文档的，而是用来管理索引文件的。
+    *   Lock writeLock; 每一个索引文件夹只能打开一个 IndexWriter，所以需要锁。
+    *   Set<SegmentInfo> segmentsToOptimize = new HashSet<SegmentInfo>(); 保存正在最优化(optimize)的段信息。当调用 optimize 的时候，当前所有的段信息加入此 Set，此后新生成的段并不参与此次最优化。
+*   用于合并段，在合并段的文章中将详细描述
+*   为保持索引完整性，一致性和事务性
+    *   SegmentInfos rollbackSegmentInfos; 当 IndexWriter 对索引进行了添加，删除文档操作后，可以调用 commit 将修改提交到文件中去，也可以调用 rollback 取消从上次 commit 到此时的修改。
+    *   此段信息主要用于将其他的索引文件夹合并到此索引文件夹的时候，为防止合并到一半出错可回滚所保存的原来的段信息。
+*   一些配置
+    *   long writeLockTimeout; 获得锁的时间超时。当超时的时候，说明此索引文件夹已经被另一个 IndexWriter 打开了。
+    *   int termIndexInterval; 同 tii 和 tis 文件中的 indexInterval。
+
+有关IndexFileDeleter：
+
+*   其不是用来删除文档的,而是用来管理索引文件的。
+*   在对文档的添加，删除，对段的合并的处理过程中，会生成很多新的文件，并需要删除老的文件，因而需要管理。
+*   然而要被删除的文件又可能在被用，因而要保存一个引用计数，仅仅当引用计数为零的时候，才执行删除。
+
+#### 2、创建文档Document对象，并加入域（Field）
+
+Document对象主要包括以下部分：
+
+*   此文档的 boost，默认为 1，大于一说明比一般的文档更加重要，小于一说明更不重要。
+*   一个 ArrayList 保存此文档所有的域
+*   每一个域包括域名,域值,和一些标志位，和 fnm,fdx,fdt 中的描述相对应。
+
+#### 3、将文档加入IndexWriter
+
+IndexWriter 继而调用 DocumentsWriter.addDocument，其又调用 DocumentsWriter.updateDocument。
+
+#### 4、将文档加入DocumentsWriter
+
+DocumentsWriter 对象主要包􏰀以下几部分：
+
+*   用于写索引文件
+    *   IndexWriter writer;
+    *   Directory directory;
+    *   Similarity similarity:分词器
+    *   String segment：当前的段名，每当 flush 的时候，将索引写入以此为名称的段。
+    *   String docStoreSegment：存储域所要写入的目标段。
+    *   int docStoreOffset：存储域在目标段中的偏移量。
+    *   int nextDocID：下一篇添加到此索引的文档 ID 号，对于同一个索引文件夹，此变量唯一，且同步访问。
+    *   DocConsumer consumer; 这是整个索引过程的核心，是 IndexChain 整个索引链的源头。
+*   删除文档
+*   缓存管理
+*   多线程并发索引
+*   一些标志位
+
+##### 4.1、得到当前线程对应的文档集处理对象(DocumentsWriterThreadState)
+
+为了支持多线程索引，不使 IndexWriter 成为瓶颈，对于每一个线程都有一个相应的文档集处理对象(DocumentsWriterThreadState)，这样对文档的索引过程可以多线程并行进行, 从而增加索引的速度。
+
+DocumentsWriterThreadState DocumentsWriter.getThreadState(Document doc, Term delTerm)包 􏰀如下几个过程：
+
+*   根据当前线程对象，从 HashMap 中查找相应的 DocumentsWriterThreadState 对象，如果没找到，则生成一个新对象，并添加到 HashMap 中
+*   如果此线程对象正在用于处理上一篇文档，则等待，直到此线程的上一篇文档处理完。
+*   如果 IndexWriter 刚刚 commit 过，则新添加的文档要加入到新的段中(segment)，则首先要生成新的段名。
+*   将此线程的文档处理对象设为忙碌:state.isIdle = false;
+
+##### 4.2、用得到的文档集处理对象（DocumentsWriterThreadState）处理文档
+
+每一个文档集处理对象 DocumentsWriterThreadState 都有一个文档及域处理对象 DocFieldProcessorPerThread，它的成员函数 processDocument()被调用来对文档及域进行处理。
+
+DocumentsWriter.DocWriter DocFieldProcessorPerThread.processDocument()包􏰀以下几个过程：
+
+###### 4.2.1、开始处理当前文档
+
+在此版的 Lucene 中，几乎所有的 XXXPerThread 的类，都有 startDocument 和 finishDocument两个函数，因为对同一个线程，这些对象都是复用的，而非对每一篇新来的文档都创建一套，这样也提高了效率,也牵扯到数据的清理问题。一般在 startDocument 函数中,清理处理上 篇文档遗留的数据，在 finishDocument 中，收集本次处理的结果数据，并返回，一直返回到 DocumentsWriter.updateDocument(Document, Analyzer, Term) 然后根据条件判断是否将数据刷新到硬盘上。
