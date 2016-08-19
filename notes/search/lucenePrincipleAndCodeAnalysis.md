@@ -1,7 +1,7 @@
 ---
 layout: post
 notes: true
-subtitle: Lucene原理与代码分析完整版（更新中）
+subtitle: Lucene原理与代码分析完整版
 comments: false
 author: "觉先(forfuture1978)"
 date: 2016-08-02 12:00:00
@@ -638,3 +638,485 @@ DocumentsWriter.DocWriter DocFieldProcessorPerThread.processDocument()包􏰀以
 ###### 4.2.1、开始处理当前文档
 
 在此版的 Lucene 中，几乎所有的 XXXPerThread 的类，都有 startDocument 和 finishDocument两个函数，因为对同一个线程，这些对象都是复用的，而非对每一篇新来的文档都创建一套，这样也提高了效率,也牵扯到数据的清理问题。一般在 startDocument 函数中,清理处理上 篇文档遗留的数据，在 finishDocument 中，收集本次处理的结果数据，并返回，一直返回到 DocumentsWriter.updateDocument(Document, Analyzer, Term) 然后根据条件判断是否将数据刷新到硬盘上。
+
+###### 4.2.2、逐个处理文档的每一个域
+
+*   4.2.2.1、首先：对于每一个域，按照域名，在 fieldHash 中查找域处理对象 DocFieldProcessorPerField
+*   4.2.2.2、然后：对 fields 数组进行排序，是域按照名称排序。quickSort(fields, 0, fieldCount-1);
+*   4.2.3.3、最后：按照排序号的顺序，对域逐个处理，此处处理的仅仅是索引域
+
+###### 4.2.3、结束处理当前文档
+
+final DocumentsWriter.DocWriter one = fieldsWriter(StoredFieldsWriterPerThread).finishDocument();
+
+存储域返回结果：一个写成了二进制的存储域缓存。
+
+##### 4.3、用 DocumentsWriter.finishDocument 结束本次文档添加
+
+#### 5、DocumentsWriter 对 CharBlockPool,ByteBlockPool，IntBlockPool 的缓存管理
+
+*   在索引的过程中,DocumentsWriter 将词信息(term)存储在 CharBlockPool 中，将文档号 (doc ID),词频(freq)和位置(prox)信息存储在 ByteBlockPool 中。
+*   在 ByteBlockPool 中，缓存是分块(slice)分配的，块(slice)是分层次的，层次越高，此层的块越大，每一层的块大小事相同的。
+    *   nextLevelArray 表示的是当前层的下一层是第几层
+    *   levelSizeArray 表示每一层的块大小
+
+#### 6、关闭IndexWriter对象
+
+将索引写入磁盘包括以下几个过程:
+
+*   得到要写入的段名:String segment = docWriter.getSegment();
+*   DocumentsWriter 将缓存的信息写入段:docWriter.flush(flushDocStores);
+*   生 成 新 的 段 信 息 对 象 : newSegment = new SegmentInfo(segment, flushedDocCount, directory, false, true, docStoreOffset, docStoreSegment, docStoreIsCompoundFile, docWriter.hasProx());
+*   准备删除文档:docWriter.pushDeletes();
+*   生成 cfs 段:docWriter.createCompoundFile(segment);
+*   删除文档：applyDeletes();
+
+##### 6.1、得到要写入的段名
+
+存储域和词向量可以和索引域存储在不同的段中。
+
+##### 6.2、将缓存的内容写入段
+
+此过程又包􏰀以下两个阶段：
+
+###### 6.2.1、 按照基本索引链关闭存储域和词向量信息
+
+其主要是根据基本索引链结构，关闭存储域和词向量信息
+
+*   词向量的关闭：TermVectorsTermsWriter.closeDocStore(SegmentWriteState)
+*   存储域的关闭：StoredFieldsWriter.closeDocStore(SegmentWriteState)
+
+###### 6.2.2、按照基本索引链的结构将索引结果写入段
+
+此过程也是按照基本索引链来的：
+
+*   6.2.2.1、写入存储域
+*   6.2.2.2、写入索引域
+    *   6.2.2.2.1、写入倒排表及词向量信息
+        *   6.2.2.2.1.1、写入倒排表信息
+        *   6.2.2.2.1.2、写入词向量信息
+    *   6.2.2.2.2、写入标准化因子
+*   6.2.2.3、写入域元数据
+
+##### 6.3、生成新的段信息对象
+
+##### 6.4、准备删除文档
+
+此处将 deletesInRAM 全部加到 deletesFlushed 中，并把 deletesInRAM 清空。
+
+##### 6.5、生成cfs段
+
+##### 6.6、删除文档
+
+Lucene删除文档可以用reader，也可以用writer，但是归根结底还是用reader来删除的。
+
+reader的删除有以下三种方式：
+
+*   按照词删除，删除所有包􏰀此词的文档。
+*   按照文档号删除。
+*   按照查询对象删除，删除所有满足此查询的文档。
+
+但是这三种方式归根结底还是按照文档号删除，也就是写.del文件的过程。
+
+## 第五章：Lucene 段合并(merge)过程分析
+
+### 一、段合并过程总论
+
+IndexWriter 中与段合并有关的成员变量有：
+
+*   HashSet<SegmentInfo> mergingSegments = new HashSet<SegmentInfo>(); //保存正在合并的段，以防止合并期间再次选中被合并。
+*   MergePolicy mergePolicy = new LogByteSizeMergePolicy(this); //合并策略，也即选取哪些段来进行合并。
+*   MergeScheduler mergeScheduler = new ConcurrentMergeScheduler(); //段合并器，背后有一个线程负责合并。
+*   LinkedList<MergePolicy.OneMerge> pendingMerges = new LinkedList<MergePolicy.OneMerge>(); //等待被合并的任务
+*   Set<MergePolicy.OneMerge> runningMerges = new HashSet<MergePolicy.OneMerge>(); // 正在被合并的任务
+
+和段合并有关的一些参数有：
+
+*   mergeFactor：当大小几乎相当的段的数量达到此值的时候，开始合并。
+*   minMergeSize：所有大小小于此值的段，都被认为是大小几乎相当，一同参与合并。
+*   maxMergeSize：当一个段的大小大于此值的时候，就不再参与合并。
+*   maxMergeDocs：当一个段包􏰀的文档数大于此值的时候，就不再参与合并。
+
+段合并一般发生在添加完一篇文档的时候，当一篇文档添加完后，发现内存已经达到用户设 定的ramBufferSize，则写入文件系统，形成一个新的段。新段的加入可能造成差不多大小的段的个数达到 mergeFactor，从而开始了合并的过程。
+
+合并过程最重要的两部分：
+
+*   一个是选择哪些段应该参与合并，这一步由MergePolicy来决定。
+*   一个是将选择出的段合并成新段的过程，这一步由MergeScheduler来执行。段的合并也主要包括：
+    *   对正向信息的合并，如存储域，词向量，标准化因子等。
+    *   对反向信息的合并，如词典，倒排表。
+
+#### 1.1、合并策略对段的选择
+
+#### 1.2、反向信息的合并
+
+反向信息的合并包括两部分：
+
+*   对字典的合并，词典中的 Term 是按照字典顺序排序的，需要对词典中的 Term 进行重新排序
+*   对于相同的 Term，对包􏰁此 Term 的文档号列表进行合并，需要对文档号重新编号
+
+### 二、段合并的详细过程
+
+#### 2.1、将缓存写入新的段
+
+当缓存写入硬盘，形成了新的段后，就有可能触发一次段合并，所以调用 maybeMerge()
+
+#### 2.2、选择合并段，生成合并任务
+
+##### 2.2.1、用合并策略选择合并段
+
+##### 2.2.2、注册段合并任务
+
+#### 2.3、段合并器进行段合并
+
+##### 2.3.1、合并存储域
+
+合并存储域主要包􏰁两部分：一部分是合并 fnm 信息，也即域元数据信息，一部分是合并 fdt,fdx 信息，也即域数据信息。
+
+##### 2.3.2、合并标准化因子
+
+合并标准化因子的过程比较简单，基本就是对每一个域，用指向合并段的 reader 读出标准 化因子，然后再写入新生成的段。
+
+##### 2.3.3、合并词向量
+
+##### 2.3.4、合并词典和倒排表
+
+反向信息的合并包括两部分：
+
+*   对字典的合并，需要对词典中的 Term 进行重新排序
+*   对于相同的 Term，对包􏰁此 Term 的文档号列表进行合并，需要对文档号重新编号。
+
+## 第六章：Lucene打分公式的数学推导
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/score.png)
+
+## 第七章：Lucene搜索过程解析
+
+### 一、Lucene搜索过程总论
+
+搜索的过程总的来说就是将词典及倒排表信息从索引中读出来，根据用户输入的查询语句合并倒排表，得到结果文档集并对文档进行打分的过程。
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/search_score.png)
+
+包括以下几个过程：
+
+1.  IndexReader 打开索引文件，读取并打开指向索引文件的流。
+2.  用户输入查询语句
+3.  将查询语句转换为查询对象 Query 对象树
+4.  构造 Weight 对象树，用于计算词的权重 Term Weight，也即计算打分公式中与仅与搜索语句相关与文档无关的部分(红色部分)。
+5.  构造 Scorer 对象树,用于计算打分(TermScorer.score())。
+6.  在构造 Scorer 对象树的过程中，其叶子节点的 TermScorer 会将词典和倒排表从索引中读出来。
+7.  构造 SumScorer 对象树，其是为了方便合并倒排表对 Scorer 对象树的从新组织，它的叶 子节点仍为 TermScorer，包􏰀词典和倒排表。
+8.  将收集的结果集合及打分返回给用户。
+
+### 二、Lucene搜索详细过程
+
+#### 2.1、打开IndexReader指向索引文件夹
+
+##### 2.1.1、找到最新的segment_N文件
+
+##### 2.1.2、通过 segment_N 文件中保存的各个段的信息打开各个段
+
+#### 2.2、打开IndexSearcher
+
+#### 2.3、QueryParser解析查询语句生成查询对象
+
+#### 2.4、搜索查询对象
+
+##### 2.4.1、创建 Weight 对象树，计算 Term Weight
+
+###### 2.4.1.1、重写Query对象树
+
+###### 2.4.1.2、创建Weight对象树
+
+###### 2.4.1.3、计算 Term Weight 分数
+
+##### 2.4.2、创建 Scorer 及 SumScorer 对象树
+
+##### 2.4.3、进行倒排表合并
+
+###### 2.4.3.1、交集 ConjunctionScorer(+A +B)
+
+###### 2.4.3.2、并集 DisjunctionSumScorer(A OR B)
+
+###### 2.4.3.3、差集 ReqExclScorer(+A -B)
+
+###### 2.4.3.4、ReqOptSumScorer(+A B)
+
+###### 2.4.3.4、有关 BooleanScorer 及 scoresDocsOutOfOrder
+
+##### 2.4.4、收集文档结果集合及计算打分
+
+###### 2.4.4.1、创建结果文档收集器
+
+###### 2.4.4.2、收集文档号
+
+###### 2.4.4.3、打分计算
+
+###### 2.4.4.4、返回打分最高的 N 篇文档
+
+##### 2.4.5、 Lucene如何在搜索阶段读取索引信息
+
+###### 2.4.5.1、读取词典信息
+
+###### 2.4.5.2、读取倒排表信息
+
+## 第八章：Lucene的查询语法，JavaCC及QueryParser
+
+### 一、Lucene的查询语法
+
+[Lucene所支持的查询语法](http://lucene.apache.org/java/3_0_1/queryparsersyntax.html)
+
+#### （1）语法关键字
+
++ - && || ! ( ) { } [ ] ^ " ~ * ? : \
+
+如果所要查询的查询词中本身包􏰀关键字，则需要用\进行转义
+
+#### （2）查询词（Term）
+
+Lucene 支持两种查询词，一种是单一查询词，如"hello"，一种是词组(phrase)，如"hello world"。
+
+#### （3）查询域（Field）
+
+在查询语句中，可以指定从哪个域中寻找查询词，如果不指定，则从默认域中查找。
+
+查询域和查询词之间用:分隔，如 title:"Do it right"。
+
+:仅对紧跟其后的查询词起作用，如果 title:Do it right，则仅表示在 title 中查询 Do，而 it right 要在默认域中查询。
+
+#### （4）通配符查询（Wildcard）
+
+支持两种通配符：?表示一个字符，*表示多个字符。
+
+通配符可以出现在查询词的中间或者􏰁尾，但决不能出现在开始。
+
+#### （5）模糊查询（Fuzzy）
+
+模糊查询的算法是基于 Levenshtein Distance，也即当两个词的差􏰂小于某个比例的时候，就算匹配，如 roam~0.8，即表示差􏰂小于 0.2，相似度大于 0.8 才算匹配。
+
+#### （6）临近查询（Proximity）
+
+#### （7） 区间查询（Range）
+
+区间查询包􏰀两种，一种是包􏰀边界，用[A TO B]指定，一种是不包􏰀边界，用{A TO B} 指定。
+
+#### （8）增加一个查询的权重（Boost）
+
+可以在查询词后面加^N 来设定此查询词的权重，默认是 1，如果 N 大于 1，则说明此查询词更重要，如果 N 小于 1，则说明此查询词更不重要。
+
+如 jakarta^4 apache，"jakarta apache"^4 "Apache Lucene"
+
+#### （9）布尔操作符
+
+布尔操作符包括连接符，如 AND,OR，和修饰符，如 NOT,+,-。
+
+默认状态下，空格被认为是 OR 的关系。
+
+QueryParser.setDefaultOperator(Operator.AND)设置为空格为 AND。
+
+#### （10）组合
+
+可以用括号，将查询语句进行组合，从而设定优先级。
+
+如(jakarta OR apache) AND website
+
+Lucene 的查询语法是由 QueryParser 来进行解析，从而生成查询对象的。
+
+QueryParser 是通过 JavaCC 来生成词法分析器和语法分析器的。
+
+### 二、JavaCC介绍
+
+#### 2.1、第一个实例——正整数相加
+
+#### 2.2、扩展语法分析器
+
+#### 2.3、第二个实例：计算器
+
+### 三、解析QueryParser.jj
+
+#### 3.1、声明QueryParser类
+
+#### 3.2、声明词法分析器
+
+#### 3.3、声明语法分析器
+
+## 第九章：Lucene的查询对象
+
+### 1、BoostingQuery
+
+### 2、CustomScoreQuery
+
+### 3、MoreLikeThisQuery
+
+### 4、MultiTermQuery
+
+#### 4.1、TermRangeQuery
+
+#### 4.2、NumericRangeQuery
+
+### 5、SpanQuery
+
+#### 5.1、SpanFirstQuery
+
+#### 5.2、SpanNearQuery
+
+#### 5.3、SpanNotQuery
+
+#### 5.4、SpanOrQuery
+
+#### 5.5、FieldMaskingSpanQuery
+
+#### 5.6、PayloadTermQuery及PayloadNearQuery
+
+### 6、FilteredQuery
+
+#### 6.1、TermsFilter
+
+#### 6.2、BooleanFilter
+
+#### 6.3、DuplicateFilter
+
+#### 6.4、FieldCacheRangeFilter<T>及FieldCacheTermsFilter
+
+#### 6.5、MultiTermQueryWrapperFilter<Q>
+
+#### 6.6、QueryWrapperFilter
+
+#### 6.7、SpanFilter
+
+##### 6.7.1、SpanQueryFilter
+
+##### 6.7.2、CachingSpanFilter
+
+## 第十章：Lucene的分词器Analyzer
+
+### 1、抽象类Analyzer
+
+其主要包􏰀两个接口，用于生成 TokenStream：
+
+*   TokenStream tokenStream(String fieldName, Reader reader);
+*   TokenStream reusableTokenStream(String fieldName, Reader reader) ;
+
+TokenStream是一个由分词后的 Token 结果组成的流，能够不断的得到下一个分成的 Token。
+
+为了提高性能，使得在同一个线程中无需再生成新的 TokenStream 对象，老的可以被重用，所以有 reusableTokenStream 一说。
+
+Analyzer 中有 CloseableThreadLocal<Object> tokenStreams = new CloseableThreadLocal<Object>(); 成员变量，保存当前线程原来创建过的 TokenStream，可用函数 setPreviousTokenStream 设定，用函数 getPreviousTokenStream 得到。
+
+在 reusableTokenStream 函数中，往往用 getPreviousTokenStream 得到老的 TokenStream 对象，然后将 TokenStream 对象 reset 以下，从而可以从新开始得到 Token 流。
+
+### 2、TokenStream抽象类
+
+TokenStream主要包含以下几个方法：
+
+*   boolean incrementToken()用于得到下一个 Token。
+*   public void reset() 使得此 TokenStrean 可以重新开始返回各个分词。
+
+### 3、几个具体的TokenStream
+
+在索引的时候，添加域的时候，可以指定 Analyzer，使其生成 TokenStream，也可以直接指定 TokenStream
+
+#### 3.1、NumericTokenStream
+
+#### 3.2、SingleTokenTokenStream
+
+### 4、Tokenizer也是一种TokenStream
+
+#### 4.1、CharTokenizer
+
+CharTokenizer 是一个抽象类，用于对字符串进行分词。
+
+#### 4.2、ChineseTokenizer
+
+#### 4.3、KeywordTokenizer
+
+KeywordTokenizer 是将整个字符作为一个 Token 返回的。
+
+#### 4.4、CJKTokenizer
+
+#### 4.5、SentenceTokenizer
+
+其是按照如下的标点来拆分句子。
+
+### 5、TokenFilter也是一种TokenStream
+
+来对 Tokenizer 后的 Token 作过滤，其使用的是装饰者模式。
+
+#### 5.1、ChineseFilter
+
+#### 5.2、LengthFilter
+
+#### 5.3、LowerCaseFilter
+
+#### 5.4、NumbericPayloadTokenFilter
+
+#### 5.5、PorterStemFilter
+
+#### 5.6、ReverseStringFilter
+
+#### 5.7、SnowballFilter
+
+其包􏰀成员变量 SnowballProgram stemmer，其是一个抽象类，其子类有 EnglishStemmer 和 PorterStemmer 等。
+
+#### 5.8、TeeSinkTokenFilter
+
+TeeSinkTokenFilter 可以使得已经分好词的 Token 全部或者部分的被保存下来，用于生成另一个 TokenStream 可以保存在其他的域中。
+
+### 6、不同的 Analyzer 就是组合不同的 Tokenizer 和 TokenFilter 得到最后的 TokenStream
+
+#### 6.1、ChineseAnalyzer
+
+按字分词，并过滤停词，标点，英文
+
+举例："Thisyear, president Hu 科学发展观" 被分词为 "year","president","hu","科","学","发"," 展","观"
+
+#### 6.2、CJKAnalyzer
+
+每两个字组成一个词，并去除停词
+
+举例："This year, president Hu 科学发展观" 被分词为"year","president","hu","科学","学发"," 发展","展观"。
+
+#### 6.3、PorterStemAnalyzer
+
+将转为小写的 token，利用 porter 算法进行 stemming
+
+#### 6.4、SmartChineseAnalyzer
+
+先分句子，句子中分词组，用porter算法进行stemming，去停词
+
+#### 6.5、SnowballAnalyzer
+
+使用标准的分词器，标准的过滤器，转换为小写，去停词，根据设定的stemmer进行stemming
+
+### 7、Lucene的标准分词器
+
+#### 7.1、StandardTokenizerImpl.jflex
+
+和 QueryParser 类似，标准分词器也需要词法分析，在原来的版本中，也是用 javacc，当前的版本中，使用的是 jflex。
+
+jflex 也是一个词法及语法分析器的生成器，它主要包括三部分，由%%分隔:
+
+*   用户代码部分：多为 package 或者 import
+*   选项及词法声明
+*   语法规则声明
+
+#### 7.2、StandardTokenizer
+
+#### 7.3、StandardFilter
+
+#### 7.4、StandardAnalyzer
+
+### 8、不同的域使用不同的分词器
+
+#### 8.1、PerFieldAnalyzerWrapper
+
+有时候，我们想不同的域使用不同的分词器，则可以用 PerFieldAnalyzerWrapper 进行封装。
+
+其有两个成员函数：
+
+*   Analyzer defaultAnalyzer：即当域没有指定分词器的时候使用此分词器
+*   Map<String,Analyzer> analyzerMap = new HashMap<String,Analyzer>()：一个从域名到分词器的映射，将根据域名使用相应的分词器。
+
+# 第三篇：问题篇
+
