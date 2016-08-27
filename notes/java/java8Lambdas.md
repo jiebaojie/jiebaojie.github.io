@@ -74,3 +74,46 @@ Lambda表达式的类型依赖于上下文环境，是由编译器推断出来�
 ## 2.4 函数接口
 
 函数接口是只有一个抽象方法的接口，用作Lambda表达式的类型。
+
+| 接口 | 参数 | 返回类型 | 示例 |
+| ---- | ---- | ---- | ---- |
+| Predicate&lt;T&gt; | T | boolean | 这张唱片已经发行了吗 | 
+| Consumer&lt;T&gt; | T | void | 输出一个值 |
+| Function&lt;T, R&gt; | T | R | 获得Artist对象的名字 |
+| Supplier&lt;T&gt; | None | T | 工厂方法 |
+| UnaryOperator&lt;T&gt; | T | T | 逻辑非(!) |
+| BinaryOperator&lt;T&gt; | (T, T) | T | 求两个数的乘积(*) |
+
+## 2.5 类型推断
+
+    Predicate<Integer> alLeast5 = x -> x > 5;
+    BinaryOperator<Long> addLongs = (x, y) -> x + y;
+
+没有泛型，代码则通不过编译
+
+    BinaryOperator add = (x, y) -> x + y;
+
+## 2.6 要点回顾
+
+*   Lambda表达式是一个匿名方法，将行为像数据一样进行传递。
+*   Lambda表达式的常见结构：BinaryOperator<Integer> add = (x, y) -> x + y。
+*   函数接口指仅具有单个抽象方法的接口，用来表示Lambda表达式的类型。
+
+## 2.7 练习
+
+# 第3章 流
+
+流使程序员得以站在更高的抽象层次上对集合进行操作。
+
+## 3.1 从外部迭代到内部迭代
+
+    long count = allArtists.stream()
+            .filter(artist -> artist.isFrom("Londom"))
+            .count();
+
+stream是用函数式编程方式在集合类上进行复杂操作的工具
+
+## 3.2 实现机制
+
+*   像filter这样只描述Stream，最终不产生新集合的方法叫作**惰性求值方法**，惰性求值的返回值是Stream；
+*   像count这样最终会从Stream产生值的方法叫作**及早求值方法**，及早求值返回值是另一个值或为空。 
