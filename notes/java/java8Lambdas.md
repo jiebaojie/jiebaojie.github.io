@@ -117,3 +117,39 @@ stream是用函数式编程方式在集合类上进行复杂操作的工具
 
 *   像filter这样只描述Stream，最终不产生新集合的方法叫作**惰性求值方法**，惰性求值的返回值是Stream；
 *   像count这样最终会从Stream产生值的方法叫作**及早求值方法**，及早求值返回值是另一个值或为空。 
+
+## 3.3 常用的流操作
+
+### 3.3.1 collect(toList())
+
+collect(toList())方法由Stream里的值生成一个列表，是一个及早求值操作。
+
+    List<String> collected = Stream.of("a", "b", "c")
+            .collect(Collectors.toList());
+
+### 3.3.2 map
+
+如果有一个函数可以将一种类型的值转换成另外一种类型，map操作就可以使用该函数，将一个流中的值转换成一个新的流。
+
+    List<String> collected = Stream.of("a", "b", "hello")
+            .map(string -> string.toUpperCase())
+            .collect(toList());
+
+### 3.3.3 filter
+
+遍历数据并检查其中的元素时，可尝试使用Stream中提供的新方法filter
+
+    List<String> beginningWithNumbers = Stream.of("a", "1abc", "abc1")
+            .filter(value -> isDigit(value.charAt(0)))
+            .collect(toList());
+
+### 3.3.4 flatMap
+
+flatMap方法可用Stream替换值，然后将多个Stream连接成一个Stream。
+
+    List<Integer> together = Stream.of(asList(1, 2), asList(3, 4))
+            .flatMap(numbers -> numbers.stream())
+            .collect(toList());
+
+### 3.3.5 max和min
+
