@@ -153,3 +153,117 @@ flatMap方法可用Stream替换值，然后将多个Stream连接成一个Stream�
 
 ### 3.3.5 max和min
 
+    Track shotestTrack = tracks.stream()
+            .min(Comparator.comparing(track -> track.getLength()))
+            .get();
+
+Stream的min 和 max方法，返回Optional对象。通过调用get方法可以取出Optional对象中的值。
+
+### 3.3.6 通用模式
+
+### 3.3.7 reduce
+
+reduce操作可以实现从一组值中生成一个值。count、min和max方法，因为常用而被纳入标准库中。这些方法都是reduce操作。
+
+    int count = Stream.of(1, 2, 3)
+            .reduce(0, (acc, element) -> acc + element);
+
+reducer的类型是BinaryOperator。
+
+展开reduce操作：
+
+    BinaryOperator<Integer> accumulator = (acc, element) -> acc + element;
+    int count = auumulator.apply(
+            accumulator.apply(
+                    accumulator.apply(0, 1),
+            2),
+    3);
+
+### 3.3.8 整合操作
+
+    Set<String> origins = album.getMusicians()
+            .filter(artist -> artist.getName().startsWith("The"))
+            .map(artist -> artist.getNationality())
+            .collect(toSet());
+
+通过Stream暴露集合的最大优点在于，它很好地封装了内部实现的数据结构。仅暴露一个Stream接口，用户在实际操作中无论如何使用，都不会影响内部的list或Set。
+
+## 3.4 重构遗留代码
+
+    albums.stream()
+            .flatMap(album -> album.getTracks())
+            .filter(track -> track.getLength() > 60)
+            .map(track -> track.getName())
+            .collect(toSet());
+
+## 3.5 多次调用流操作
+
+避免每一步操作都强制对函数求值
+
+## 3.6 高阶函数
+
+如果函数的参数列表里包含函数接口，或该函数返回一个函数接口，那么该函数就是高阶函数。
+
+## 3.7 正确使用Lambda表达式
+
+无论何时，将Lambda表达式传给Stream上的高阶函数，都应该尽量避免副作用。唯一的例外是forEach方法，它是一个终结方法。
+
+## 3.8 要点回顾
+
+*   内部迭代将更多控制权交给了集合类。
+*   和Iterator类似，Stream是一种内部迭代方式。
+*   将Lambda表达式和Stream上的方法结合起来，可以完成很多常见的集合操作。
+
+## 3.9 练习
+
+## 3.10 进阶练习
+
+# 第4章 类库
+
+Java 8中的另一个变化是引入了*默认方法*和接口的*静态方法*，它改变了人们认识类库的方式，接口中的方法也可以包含代码体了。
+
+## 4.1 在代码中使用Lambda表达式
+
+使用Lambda表达式简化日志代码
+
+    Logger logger = new Logger();
+    logger.debug(() -> "Look at this!");
+
+启用Lambda表达式实现日志记录器
+
+    public void debug(Supplier<String> message) {
+        if (isDebugEnabled()) {
+            debug(message.get());
+        }
+    }
+
+## 4.2 基本类型
+
+    IntSummaryStatistics trackLengthStats = album.getTracks()
+            .mapToInt(track -> track.getLength))
+            .sumaryStatistics();
+    System.out.println("Max: %d, Min: %d, Avg: %f, Sum: %d",
+            trackLengthStats.getMax(),
+            trackLengthStats.getMin(),
+            trackLengthStats.getAverage(),
+            trackLengthStats.getSum());
+
+这些统计值在所有特殊处理的Stream，如DoubleStream、LongStream中都可以得出。如无需全部的统计值，也可分别调用min、max、average或sum方法获得单个的统计值，同样，三种基本类型对应的特殊Stream也都包含这些方法。
+
+## 4.3 重载解析
+
+Lambda表达式作为参数时，其类型由它的目标类型推导得出，推导过程遵循如下规则：
+    
+*   如果只有一个可能的目标类型，由相应函数接口里的参数类型推导得出
+*   如果有多个可能的目标类型，由最具体的类型推导得出
+*   如果有多个可能的目标类型且最具体的类型不明确，则需人为指定类型
+
+## 4.4 @FunctionalInterface
+
+为了提高Stream对象可操作性而引入的各种新接口，都需要有Lambda表达式可以实现它。它们存在的意义在于将代码块作为数据打包起来。因此，它们都添加了@FunctionalInterface注释。
+
+该注释会强制javac检查一个接口是否符合函数接口的标准。如果不符合，javac就会报错。重构代码时，使用它能很容易发现问题。
+
+## 4.5 二进制接口的兼容性
+
+在JDK之外实现Colleciton接口的类，需要实现新增的stream方法。为了避免这个糟糕情况，则需要在Java 8中添加新的语言特性：*默认方法*
