@@ -326,4 +326,36 @@ Optinal是为核心类库新设计的一个数据类型，用来替换null值。
 
 ## 4.12 练习
 
-## 4.13 开放练习   
+## 4.13 开放练习
+
+# 第5章 高级集合类和收集器
+
+## 5.1 方法引用
+
+    artiset -> artist.getName()
+
+用*方法引用*重写上面的Lambda表达式：
+
+    Artist::getName
+
+标准语法为Classname::methodName。
+
+    （name, nationality) -> new Artist(name, nationality)
+
+使用方法引用，上述代码可写为：
+
+    Artist::new
+
+创建数组：
+    
+    String[]::new
+
+## 5.2 元素顺序
+
+    List<Integer> sameOrder = numbers.stream()
+            .sorted()
+            .collect(toList()); 
+
+一些操作在有序的流上开销更大，调用unordered方法消除这种顺序就能解决该问题。大多数操作都是在有序流上效率更高，比如filter、map和reduce等。
+
+forEach方法不能保证元素是按顺序处理的。如果需要保证按顺序处理，应该使用forEachOrdered方法。  
