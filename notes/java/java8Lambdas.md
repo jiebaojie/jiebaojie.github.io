@@ -359,3 +359,111 @@ Optinal是为核心类库新设计的一个数据类型，用来替换null值。
 一些操作在有序的流上开销更大，调用unordered方法消除这种顺序就能解决该问题。大多数操作都是在有序流上效率更高，比如filter、map和reduce等。
 
 forEach方法不能保证元素是按顺序处理的。如果需要保证按顺序处理，应该使用forEachOrdered方法。  
+
+## 5.3 使用收集器
+
+### 5.3.1 转换成其他集合
+
+在调用toList或者toSet方法时，不需要指定具体的类型。Stream类库在背后自动为你挑选出了合适的类型。比如，你可能希望使用TreeSet，而不是由框架在背后自动为你指定一种类型的Set，此时就可以使用toCollection，它接受一个函数作为参数，来创建集合。
+
+    stream.collect(toCollection(TreeSet::new));
+
+### 5.3.2 转换成值
+
+    Function<Artist, Long> getCount = artist -> artist.getMembers().count();
+    Optional<Artist> biggestGroup = artists.collect(maxBy(Comparing(getCount)));
+
+    albums.stream().collect(averagingInt(album -> album.getTrackList().size()));
+
+### 5.3.3 数据分块
+
+另外一个常用的流操作是将其分解成两个集合。
+
+有这样一个收集器partitioningBy，它接受一个流，并将其分成两部分。它使用Predicate对象判断一个元素应该属于哪个部分，并根据布尔值返回一个Map列表。
+
+    Map<Boolean, List<Artist>> bandsAndSolo = artists.collect(partitioningBy(artist -> artist.isSolo()));
+
+    Map<Boolean, List<Artist>> bandsAndSolo = artists.collect(partitioningBy(Artist::isSolo));
+
+### 5.3.4 数据分组
+
+    Map<Artist, List<Album>> albumsByArtist = albums.collect(groupingBy(album -> album.getMainMusician()));
+
+### 5.3.5 字符串
+
+    String result = artists.stream()
+            .map(Artist::getName)
+            .collect(Collectors.joining(",", "[", "]"));
+
+Collectors.joining方法可以方便地从一个流得到一个字符串，允许用户提供分隔符、前缀和后缀
+
+### 5.3.6 组合收集器
+
+    Map<Artist, Long> numberOfAlbums = albums.collect(groupingBy(album -> album.getMainMuscian(), counting()));
+
+    Map<Artist, List<String>> nameOfAlbums = albums.collect(groupingBy(Album::getMainMusician, mapping(Album::getName, toList())));
+
+### 5.3.7 重构和定制收集器
+
+    String result = artists.stream()
+            .map(Artist::getName)
+            .collect(new StringCollector(",", "[", "]"));
+
+定义字符串收集器：
+    
+    public class StringCollector implements Collector<String, StringCombiner, String> {
+        ...
+    }
+
+一个收集器由四部分组成。首先是一个Supplier，这是一个工厂方法，用来创建容器。
+
+    public Supplier<StringCombiner> supplier() {
+        return () -> new StringCombiner(delim, prefix, suffix);
+    } 
+
+收集器的accumulator结合之前操作的结果和当前值，生成并返回新的值。
+
+    public BiConsumer<StringCombiner, String> accumulator() {
+        return StringCombiner::add;
+    }
+
+combine方法用于合并两个容器
+
+    public BinaryOperator<StringCombiner> combiner() {
+        return StringCombiner::merge;
+    }
+
+在收集阶段，容器被combiner方法成对合并进一个容器，直到最后只剩下一个容器为止。
+
+finisher方法，转换成最终想要的结果
+
+    public Function<StringCombiner, String> finisher() {
+        return StringCombiner::toString;
+    }
+
+### 5.3.8 对收集器的归一化处理
+
+reducing收集器，低效，建议定制收集器
+
+## 5.4 一些细节
+
+用Map实现缓存的读取
+
+    artistCache.computeIfAbsent(name, this::readArtistFromDB);
+
+使用内部迭代遍历Map
+
+    albumsByArtist.forEach((artist, albums) -> {
+        ......
+    });
+
+## 5.5 要点回顾
+
+*   方法引用是一种引用方法的轻量级语法，形如：ClassName::methodName。
+*   收集器可用来计算流的最终值，是reduce方法的模拟。
+*   Java 8 提供了收集多种容器类型的方式，同时允许用户自定义收集器。
+
+## 5.6 练习
+
+
+    }   
