@@ -465,5 +465,36 @@ reducing收集器，低效，建议定制收集器
 
 ## 5.6 练习
 
+# 第6章 数据并行化
 
-    }   
+## 6.1 并行和并发
+
+并发是两个任务共享时间段，并行则是两个任务在同一时间发生，比如运行在多核CPU上。如果一个程序要运行两个任务，并且只有一个CPU给它们分配了不同的时间片，那么这就是并发，而不是并行。
+
+数据并行化：将数据分成块，为每块数据分配单独的处理单元。
+
+当需要在大量数据上执行同样的操作时，数据并行化很管用。它将问题分解为可在多块数据上求解的形式，然后对每块数据执行运算，最后将各数据块上得到的结果汇总，从而获得最终答案。
+
+任务并行化：线程不同，工作各异。
+
+## 6.2 为什么并行化如此重要
+
+## 6.3 并行化流操作
+
+并行化操作流只需改变一个方法调用。如果已经有一个Stream对象，调用它的parallel方法就能让其拥有并行操作的能力。如果想从一个集合类创建一个流，调用parrelStream就能立即获得一个拥有并行能力的流。
+
+    int parallelArraySum = albums.parallelStream()
+            .flatMap(Album::getTracks)
+            .mapToInt(Track::getLength)
+            .sum();
+
+## 6.4 模拟系统
+
+使用蒙特卡洛模拟法并行化模拟掷骰子事件
+
+    double fraction = 1.0 / N;
+    Map<Integer, Double> parallelDiceRolls = IntStream.range(0, N)
+            .parallel()
+            .mapToObj(twoDiceThrows())
+            .collect(groupingBy(side -> side,
+                sumingDouble(n -> fraction)));
