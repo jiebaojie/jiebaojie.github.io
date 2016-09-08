@@ -529,3 +529,34 @@ reducing收集器，低效，建议定制收集器
 在讨论流中单独操作每一块的种类时，可以分成两种不同的操作：*无状态的和有状态的*。无状态操作整个过程中不必维护状态，有状态操作则有维护状态所需的开销和限制。
 
 如果能避开有状态，选用无状态操作，就能获得更好的并行性能。无状态操作包括map、filter和flatMap，有状态操作包括sorted、distinct和limit。
+
+## 6.7 并行化数组操作
+
+Java 8还引入了一些针对数组的并行操作，脱离流框架也可以使用Lambda表达式。
+
+*   parallelPrefix：更新一个数组，将每一个元素替换为当前元素和前驱元素的和，这里的"和"是一个宽泛的概念，它不必是加法，可以是任意一个BinaryOperator。
+*   parallelSetAll：使用Lambda表达式更新数组元素
+*   parallelSort：并行化对数组元素排序
+
+使用并行化数组操作初始化数组
+
+    Arrays.parallelSetAll(values, i -> i);
+
+计算简单滑动平均数
+
+    Arrays.parallelPrefix(sums, Double::sum);
+    int start = n - 1;
+    double[] simpleMovingAverage = IntStream.range(start, sums.length)
+            .mapToDouble(i -> {
+                double prefix = i == start ? 0 : sums[i - n];
+                return (sums[i] - prefix) / n;
+            })
+            .toArray();
+
+## 6.8 要点回顾
+
+*   数据并行化是把工作拆分，同时在多核CPU上执行的方式。
+*   如果使用流编写代码，可通过调用parallel或者parallelStream方法实现数据并行化操作。
+*   影响性能的五要素是：数据大小、源数据结构、值是否装箱、可用的CPU核数量，以及处理每个元素所花的时间。
+
+## 6.9 练习
