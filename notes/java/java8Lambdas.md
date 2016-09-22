@@ -560,3 +560,299 @@ Java 8还引入了一些针对数组的并行操作，脱离流框架也可以�
 *   影响性能的五要素是：数据大小、源数据结构、值是否装箱、可用的CPU核数量，以及处理每个元素所花的时间。
 
 ## 6.9 练习
+
+# 第7章 测试、调试和重构
+
+## 7.1 重构候选项
+
+### 7.1.1 进进出出、摇摇晃晃
+
+    logger.debug(() -> "Hello Wrold!");
+
+### 7.1.2 孤独的覆盖
+
+### 7.1.3 同样的东西写两遍
+
+领域方法
+
+    public long countFeature(ToLongFunction<Album> function) {
+        return albums.stream()
+                .mapToLong(function)
+                .sum();
+    }
+
+    public long countTracks() {
+        return countFeature(album -> album.getTracks().count());
+    }
+
+    public long countRunningTime() {
+        return countFeature(album -> album.getTracks()
+                .mapToLong(track -> track.getLength())
+                .sum());
+    }
+
+## 7.2 Lambda表达式的单元测试
+
+将Lambda表达式重构为一个方法，然后在主程序中使用
+
+    public static List<String> elementFirstToUppercase(List<String> words) {
+        return words.stream()
+                .map(Testing::firstToUppercase)
+                .collect(Collectors.<String>toList());
+    }
+
+    public static String firstToUppercase(String value) {
+        char firstChar = Character.toUpperCase(value.charAt(0));
+        return firstChar + value.substring(1);
+    }
+
+## 7.3 在测试替身时使用Lambda表达式
+
+    List<String> list = mock(List.class);
+    when(list.size()).thenAnswer(inv -> otherList.size());
+    assertEquals(3, list.size());
+
+## 7.4 惰性求值和调试
+
+## 7.5 日志和打印消息
+
+forEach方法缺点：无法再继续操作流了，流只能使用一次，如果我们还想继续，必须重新创建流。
+
+## 7.6 解决方案：peek
+
+peek方法：能查看每个值，并且继续操作流。
+
+使用peek方法还能以同样的方式，将输出定向到现有日志系统中。
+
+## 7.7 在流中间设置断点
+
+可在peek方法中加入断点
+
+## 7.8 要点回顾
+
+*   重构遗留代码时考虑如何使用Lambda表达式，有一些通用的模式。
+*   如果想要对复杂一点的Lambda表达式编写单元测试，将其抽取成一个常规的方法。
+*   peek方法能记录中间值，在调试时非常有用。
+
+# 第8章 设计和架构的原则
+
+软件开发最重要的设计工具不是什么技术，而是一颗在设计原则方面训练有素的头脑。
+
+## 8.1 Lambda表达式改变了设计模式
+
+### 8.1.1 命令者模式
+
+*命令者*是一个对象，它封装了调用另一个方法的所有细节，*命令者模式*使用该对象，可以编写出根据运行期条件，顺序调用方法的一般化代码。
+
+命令接收者：执行实际任务
+
+    public interface Editor {
+
+        void save();
+
+        void open();
+
+        void close();
+    }
+
+像open、save这样的操作称为命令。
+命令者、具体命令者：封装了所有调用命令执行者的信息。
+
+    public interface Action {
+
+        void perform();
+    }
+
+    public class Save implements Action {
+
+        private final Editor editor;
+
+        public Save(Editor editor) {
+            this.editor = editor;
+        }
+
+        @Override
+        public void perform() {
+            editor.save();
+        }
+    }
+
+发起者：控制一个或多个命令的顺序和执行。
+
+    public class Macro {
+
+        private final List<Action> actions;
+
+        public Micro() {
+            actions = new ArrayList<>();
+        }
+
+        public void record(Action action) {
+            actions.add(action);
+        }
+
+        public void run() {
+            actions.forEach(Action::perform);
+        }
+    }
+
+客户端：创建具体的命令者实例。
+
+    Macro macro = new Macro();
+    macro.record(new Open(editor));
+    macro.record(new Save(editor));
+    macro.record(new Close(editor));
+    macro.run();
+
+事实上，所有的命令类都是Lambda表达式：
+使用Lambda表达式构建宏：
+
+    Macro macro = new Macro();
+    macro.record(() -> editor.open());
+    macro.record(() -> editor.save());
+    macro.record(() -> editor.close());
+    macro.run();
+
+使用方法引用构建宏
+
+    Macro macro = new Macro();
+    macro.record(editor::open);
+    macro.record(editor::save);
+    macro.record(editor::close);
+    macro.run();
+
+### 8.1.2 策略模式
+
+使用Lambda表达式可以去掉具体的策略实现，使用一个方法实现算法。
+
+### 8.1.3 观察者模式
+
+使用Lambda表达式可以去掉具体观察者的实现。
+
+*将大量代码塞进一个方法会让可读性变差*是决定如何使用Lambda表达式的黄金法则。
+
+### 8.1.4 模板方法模式
+
+    public class LoanApplication {
+
+        private final Criteria identity;
+        private final Criteria creditHistory;
+        private final Criteria incomeHistory;
+
+        public LoanApplication(Criteria identity, Criteria creditHistory, Criteria incomeHistory) {
+
+            this.identity = identity;
+            this.creditHistory = creditHistory;
+            this.incomeHistory = incomeHistory;
+        }
+
+        public void checkLoanApplication() throws ApplicationDenied {
+
+            identity.check();
+            creditHistory.check();
+            incomeHistory.check();
+            reportFindings();
+        }
+
+        private void reportFindings() {
+
+            ...
+        }
+    }
+
+    public interface Criteria {
+
+        public void check() throws ApplicationDenied;
+    }
+
+    public class CompanyLoanApplication extends LoanApplication {
+
+        public CompanyApplication(Company company) {
+
+            super(company::checkIdentity, company::checkHistoricalDebt, company::checkProfitAndLoss);
+        }
+    }
+
+## 8.2 使用Lambda表达式的领域专用语言
+
+*领域专用语言*（DSL）是针对软件系统中某特定部分的编程语言。DSL高度专用：不求绵绵俱到，但求有所专长。
+
+两类DSL：
+
+*   外部DSL：脱离程序源码编写，然后单独解析和实现。比如级联样式表（CSS）和正则表达式。
+*   内部DSL：内部DSL嵌入编写它们的编程语言中。
+
+概念：
+
+*   每一个规则描述了程序的一种行为；
+*   期望是描述应用行为的一种方式，在规则中定义；
+*   多个规则合在一起，形成一个套件。
+
+与JUnit对照，规则对应一个测试方法，期望对应断言，套件对应一个测试类。
+
+### 8.2.1 使用Java编写DSL
+
+### 8.2.2 实现
+
+### 8.2.3 评估
+
+## 8.3 使用Lambda表达式的SOLID原则
+
+SOLID原则：
+
+*   Single responsibility：单一功能原则
+*   Open/closed：开闭原则
+*   Liskov substitution：里氏替换原则
+*   Interface segregation：接口分离原则
+*   Dependency inversion：依赖反转原则
+
+### 8.3.1 单一功能原则
+
+程序中的类或方法只能有一个改变的理由。
+
+    public long countPrimes(int upTo) {
+
+        return IntStream.range(1, upTo)
+                .filter(this::isPrime)
+                .count();
+    }
+
+    private boolean isPrime(int number) {
+
+        return IntStream.range(2, number)
+                .allMatch(x -> (number % x) != 0);
+    }
+
+### 8.3.2 开闭原则
+
+在Java 8中，任何传入高阶函数的Lambda表达式都由一个函数接口表示，高阶函数负责调用其唯一的方法，根据传入Lambda表达式的不同，行为也不同。这其实也是在用多态来实现开闭原则。
+
+### 8.3.3 依赖反转原则
+
+抽象不应依赖细节，细节应该依赖抽象。
+
+    public List<String> findHeadings(Reader input) {
+
+        return withLinesOf(input, 
+            lines -> lines.filter(line -> line.endsWith(":")))
+                    .map(line -> line.substring(0, line.length() - 1))
+                    .collect(toList()),
+            HeadingLookupException::new);
+    }
+
+    private <T> T withLinesOf(Reader input, Function<Stream<String>, T> handler, Function<IOException, RuntimeException> error) {
+
+        try (BufferedReader reader = new BufferedReader(input)) {
+            return handler.apply(reader.lines());
+        } catch (IOException e) {
+            throw error.apply(e);
+        }
+    }
+
+## 8.4 进阶阅读
+
+## 8.5 要点回顾
+
+*   Lambda表达式能让很多现有设计模式更简单，可读性更强，尤其是命令者模式。
+*   在Java8中，创建领域专用语言有更多的灵活性。
+*   在Java8中，有应用SOLID原则的新机会。 
