@@ -11,6 +11,9 @@ date: 2016-08-23 12:00:00
 
 原文：[http://www.yunweipai.com/archives/9172.html](http://www.yunweipai.com/archives/9172.html)
 
+*   目录
+{:toc }
+
 MVC单体架构问题：
 
 *   **研发成本高**：代码重复率高，需求变更困难，无法满足新业务快速上线和敏捷交付。
