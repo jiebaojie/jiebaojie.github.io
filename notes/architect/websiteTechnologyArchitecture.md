@@ -91,3 +91,23 @@ CDN和反向代理的基本原理都是缓存，区别在于：
 分布式数据库是网站数据库拆分的最后手段，只有在单表数据规模非常庞大的时候才使用。不到不得已时，网站更常用的数据库拆分手段是业务分库，将不同业务的数据库部署在不同的物理服务器上。
 
 ![](/img/notes/architect/websiteTechnologyArchitecture/distributed.png)
+
+### 1.2.8 使用NoSQL和搜索引擎
+
+![](/img/notes/architect/websiteTechnologyArchitecture/nosql_search_engine.png)
+
+NoSQL和搜索引擎都是源自互联网的技术手段，对可伸缩的分布式特性具有更好的支持。应用服务器则通过一个统一数据访问模块访问各种数据，减轻应用程序管理诸多数据源的麻烦。
+
+### 1.2.9 业务拆分
+
+技术上，会根据产品线划分，将一个网站拆分成许多不同的应用，每个应用独立部署维护。应用之间可以通过一个超链接建立关系，也可以通过消息队列进行数据分发，最多的还是通过访问同一个数据存储系统来构成一个关联的完整系统。
+
+![](/img/notes/architect/websiteTechnologyArchitecture/business_split.jpg)
+
+### 1.2.10 分布式服务
+
+每一个应用系统都需要执行许多相同的业务操作，比如用户管理、商品管理等，那么可以将这些共用的业务提取出来，独立部署。
+
+![](/img/notes/architect/websiteTechnologyArchitecture/distributed_server.png)
+ 
+目前许多大型网站都开始建设云计算平台，将计算作为一种基础资源出售，中小网站不需要再关心技术架构问题，只需要按需付费，就可以使网站随着业务的增长逐渐获得更大的存储空间和更多的计算资源。
