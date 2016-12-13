@@ -154,3 +154,53 @@ MySQL复制大部分是向后兼容的，新版本的服务器可以作为老版
 1.	在主库上把数据更改记录二进制日志（Binary Log）中（这些记录被称为二进制日志事件）。
 2.	备库将主库上的日志复制到自己的中继日志（Relay Log）中。
 3.	备库读取中继日志中的事件，将其重放到备库数据库之上。
+
+![](/img/notes/db/highPerformanceMySQL/replication_work.png)
+
+在主库上并发运行的查询在备库只能串行化执行，因为只有一个SQL线程来重放中继日志中的事件。
+
+## 10.2 配置复制
+
+大致步骤：
+
+1.	在每台服务器上创建复制账号。
+2.	配置主库和备库
+3.	通知备库连接到主库并从主库复制数据。
+
+### 10.2.1 创建复制账号
+
+	mysql> GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.*
+	    -> TO repl@'192.168.0.%' IDENTIFIED BY 'p4ssword';
+		
+### 10.2.2 配置主库和备库
+
+假设主库是服务器server1，需要打开二进制日志并指定一个独一无二的服务器ID（server ID），在主库的my.cnf文件中增加或修改如下内容：
+
+	log_bin = mysql-bin
+	server_id = 10
+
+备库上也需要在my.cnf中增加类似的配置，并且同样需要重启服务器。
+
+	log_bin = mysql-bin
+	server_id = 2
+	relay_log = /var/lib/mysql/mysql-relay-bin
+	log_slave_updates = 1
+	read_only = 1
+	
+### 10.2.3 启动复制
+
+下一步是告诉备库如何连接到主库并重放其二进制日志。这一步不要通过修改my.cnf来配置，而是使用CHANGE MASTER TO语句，该语句完全替代了my.cnf中相应的设置，并且允许以后指向别的主库时无须重启备库。
+
+	mysql> CHANGE MASTER TO MASTER_HOST='server1',
+	    -> MASTER_USER='repl',
+		-> MASTER_PASSWORD='p4ssword',
+		-> MASTER_LOG_FILE='mysql-bin.000001',
+		-> MASTER_LOG_POS=0;
+		
+MASTER_LOG_POS参数被设置为0，因为要从日志的开头读起。当执行完这条语句后，可以通过SHOW SLAVE STATUS语句来检查复制是否正确执行。
+
+	mysql> SHOW SLAVE STATUS\G
+	
+运行下面的命令开始复制：
+
+	mysql> START SLAVE;
