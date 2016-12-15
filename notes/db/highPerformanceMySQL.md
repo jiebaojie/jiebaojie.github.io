@@ -240,3 +240,31 @@ MASTER_LOG_POS参数被设置为0，因为要从日志的开头读起。当执�
 *	使用Percona Xtrabackup
 *	使用另外的备库
 
+### 10.2.5 推荐的复制配置
+
+在主库上二进制日志最重要的选项是sync_binlog：
+
+	sync_binlog=1
+	
+如果开启该选项，MySQL每次在提交事务前会将二进制日志同步到磁盘上，保证在服务器崩溃时不会丢失事件。
+
+如果无法容忍服务器崩溃导致表损坏，推荐使用InnoDB。
+
+如果使用InnoDB，我们强烈推荐设置如下选项：
+
+	innodb_flush_logs_at_trx_commit		# Flush every log write
+	innodb_support_xa=1					# MySQL 5.0 and newer only
+	innodb_safe_binlog					# MySQL 4.1 only, roughly equivalent to
+	
+推荐明确指定二进制日志的名字，以保证二进制日志在所有服务器上是一致的：
+
+	log_bin=/var/lib/mysql/mysql-bin
+	
+在备库上，我们同样推荐如下配置选项，为中继日志指定绝对路径：
+
+	relay_log=/path/to/logs/relay-bin
+	skip_slave_start
+	read_only
+	
+*	skip_slave_start选项能够阻止备库在崩溃后自动启动复制（有机会来修复可能发生的问题）。
+*	read_only选项可以阻止大部分用户更改非临时表。
