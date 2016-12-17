@@ -268,3 +268,9 @@ MASTER_LOG_POS参数被设置为0，因为要从日志的开头读起。当执�
 	
 *	skip_slave_start选项能够阻止备库在崩溃后自动启动复制（有机会来修复可能发生的问题）。
 *	read_only选项可以阻止大部分用户更改非临时表。
+
+即使开启了所有我们建议的选项，备库仍然可能在崩溃后被中断，因为master.info和中继日志文件都不是崩溃安全的。如果正在使用MySQL 5.5并且不介意额外的fsync()导致的性能开销，最好设置以下选项：
+
+	sync_master_info = 1
+	sync_relay_log = 1
+	sync_relay_log_info = 1
