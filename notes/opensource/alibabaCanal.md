@@ -138,4 +138,81 @@ mysql的Binary Log网络协议：
 *	图中的协议4byte header，主要是描述整个binlog网络包的length
 *	binlog event structure，详细信息请参考： [http://forge.mysql.com/wiki/MySQL_Internals_Binary_Log](http://forge.mysql.com/wiki/MySQL_Internals_Binary_Log)
 
+## EventSink设计
 
+![](/img/notes/opensource/alibabaCanal/eventsink.jpg)
+
+说明：
+
+*	数据过滤：支持通配符的过滤模式，表名，字段内容等
+*	数据路由/分发：解决1:n (1个parser对应多个store的模式)
+*	数据归并：解决n:1 (多个parser对应1个store)
+*	数据加工：在进入store之前进行额外的处理，比如join
+
+## EventStore设计
+
+1.	目前仅实现了Memory内存模式，后续计划增加本地file存储，mixed混合模式
+2.	借鉴了Disruptor的RingBuffer的实现思路
+
+RingBuffer设计：
+
+![](/img/notes/opensource/alibabaCanal/ringbuffer.jpg)
+
+定义了3个cursor：
+
+*	Put : Sink模块进行数据存储的最后一次写入位置
+*	Get : 数据订阅获取的最后一次提取位置
+*	Ack : 数据消费成功的最后一次消费位置
+
+借鉴Disruptor的RingBuffer的实现，将RingBuffer拉直来看：
+
+![](/img/notes/opensource/alibabaCanal/ringbuffer2.jpg)
+
+实现说明：
+
+*	Put/Get/Ack cursor用于递增，采用long型存储
+*	buffer的get操作，通过取余或者与操作。(与操作： cusor & (size - 1) , size需要为2的指数，效率比较高)
+
+## Instance设计
+
+instance代表了一个实际运行的数据队列，包括了EventPaser,EventSink,EventStore等组件。
+
+抽象了CanalInstanceGenerator，主要是考虑配置的管理方式：
+
+*	manager方式：和你自己的内部web console/manager系统进行对接。(目前主要是公司内部使用)
+*	spring方式：基于spring xml + properties进行定义，构建spring配置。
+
+## Server设计
+
+![](/img/notes/opensource/alibabaCanal/server.jpg)
+
+server代表了一个canal的运行实例，为了方便组件化使用，特意抽象了Embeded(嵌入式) / Netty(网络访问)的两种实现
+
+*	Embeded : 对latency和可用性都有比较高的要求，自己又能hold住分布式的相关技术(比如failover)
+*	Netty : 基于netty封装了一层网络协议，由canal server保证其可用性，采用的pull模型，当然latency会稍微打点折扣，不过这个也视情况而定。
+
+## 增量订阅/消费设计
+
+![](/img/notes/opensource/alibabaCanal/subscribe_consumer.jpg)
+
+get/ack/rollback协议介绍：
+
+*	Message getWithoutAck(int batchSize)，允许指定batchSize，一次可以获取多条，每次返回的对象为Message，包含的内容为：batch id唯一标识、entries 具体的数据对象。
+*	void rollback(long batchId)，顾命思议，回滚上次的get请求，重新获取数据。基于get获取的batchId进行提交，避免误操作。
+*	void ack(long batchId)，顾命思议，确认已经消费成功，通知server删除数据。基于get获取的batchId进行提交，避免误操作。
+
+canal的get/ack/rollback协议和常规的jms协议有所不同，允许get/ack异步处理，比如可以连续调用get多次，后续异步按顺序提交ack/rollback，项目中称之为流式api。
+
+流式api设计的好处：
+
+*	get/ack异步化，减少因ack带来的网络延迟和操作成本 (99%的状态都是处于正常状态，异常的rollback属于个别情况，没必要为个别的case牺牲整个性能)
+*	get获取数据后，业务消费存在瓶颈或者需要多进程/多线程消费时，可以不停的轮询get数据，不停的往后发送任务，提高并行化。
+
+流式api设计：
+
+![](/img/notes/opensource/alibabaCanal/flow_api.jpg)
+
+*	每次get操作都会在meta中产生一个mark，mark标记会递增，保证运行过程中mark的唯一性
+*	每次的get操作，都会在上一次的mark操作记录的cursor继续往后取，如果mark不存在，则在last ack cursor继续往后取
+*	进行ack时，需要按照mark的顺序进行数序ack，不能跳跃ack. ack会删除当前的mark标记，并将对应的mark位置更新为last ack cusor
+*	一旦出现异常情况，客户端可发起rollback情况，重新置位：删除所有的mark, 清理get请求位置，下次请求会从last ack cursor继续往后取
