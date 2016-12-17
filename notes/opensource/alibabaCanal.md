@@ -216,3 +216,25 @@ canal的get/ack/rollback协议和常规的jms协议有所不同，允许get/ack�
 *	每次的get操作，都会在上一次的mark操作记录的cursor继续往后取，如果mark不存在，则在last ack cursor继续往后取
 *	进行ack时，需要按照mark的顺序进行数序ack，不能跳跃ack. ack会删除当前的mark标记，并将对应的mark位置更新为last ack cusor
 *	一旦出现异常情况，客户端可发起rollback情况，重新置位：删除所有的mark, 清理get请求位置，下次请求会从last ack cursor继续往后取
+
+## HA机制设计
+
+canal的ha分为两部分，canal server和canal client分别有对应的ha实现：
+
+*	canal server: 为了减少对mysql dump的请求，不同server上的instance要求同一时间只能有一个处于running，其他的处于standby状态。
+*	canal client: 为了保证有序性，一份instance同一时间只能由一个canal client进行get/ack/rollback操作，否则客户端接收无法保证有序。
+
+整个HA机制的控制主要是依赖了zookeeper的几个特性，watcher和EPHEMERAL节点(和session生命周期绑定)。
+
+Canal Server：
+
+![](/img/notes/opensource/alibabaCanal/ha_server.jpg)
+
+大致步骤：
+
+1.	canal server要启动某个canal instance时都先向zookeeper进行一次尝试启动判断(实现：创建EPHEMERAL节点，谁创建成功就允许谁启动)
+2.	创建zookeeper节点成功后，对应的canal server就启动对应的canal instance，没有创建成功的canal instance就会处于standby状态
+3.	一旦zookeeper发现canal server A创建的节点消失后，立即通知其他的canal server再次进行步骤1的操作，重新选出一个canal server启动instance。
+4.	canal client每次进行connect时，会首先向zookeeper询问当前是谁启动了canal instance，然后和其建立链接，一旦链接不可用，会重新尝试connect。
+
+Canal Client的方式和canal server方式类似，也是利用zookeeper的抢占EPHEMERAL节点的方式进行控制。
