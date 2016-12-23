@@ -16,3 +16,7 @@ date: 2016-11-29 00:00:00
 **SEDA(Staged Event-Driven Architecture)**：核心思想是把一个请求处理过程分成几个Stage，不同资源消耗的Stage使用不同数量的线程来处理，Stage间使用事件驱动的异步通信模式。
 
 **coachdb**：http://couchdb.apache.org/
+
+**Apache Ignite**：http://ignite.apache.org/features.html、https://www.zybuluo.com/liyuj/note/230739
+
+**Zeppelin**：https://www.zybuluo.com/liyuj/note/230739
