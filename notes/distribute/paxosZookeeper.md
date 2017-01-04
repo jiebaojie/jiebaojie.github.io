@@ -887,4 +887,131 @@ ZooKeeper构造方法参数说明：
 *   sessionId和sessionPasswd：分别代表会话ID和会话秘钥。这两个参数能够唯一确定一个会话，同时客户端使用这两个参数可以实现客户端会话复用，从而达到恢复会话的效果。具体使用方法是，第一次连接上ZooKeeper服务器时，通过调用ZooKeeper对象实例的以下两个接口，即可获得当前会话的ID和秘钥：
     *   long getSessionId();
     *   byte[] getSessionPasswd();
+
+### 5.3.2 创建节点
+
+有如下两个接口（第一个同步，第二个异步）：
+
+    String create(final String path, byte data[], List<ACL> acl, CreateMode createMode);
+    void create(final String path, byte data[], List<ACL> acl, CreateMode createMode, StringCallback cb, Object ctx);
+
+参数说明如下：
+
+*   path：需要创建的数据的节点路径
+*   data[]：一个字节数组，是节点创建后的初始内容
+*   acl：节点的ACL策略
+*   createMode：节点类型，是一个枚举类型，通常有4种可选的节点类型：
+    *   持久（PERSISTENT）
+    *   持久顺序（PERSISTENT_SEQUENTIAL）
+    *   临时（EPHEMERAL）
+    *   临时顺序（EPHEMERAL_SEQUENTIAL）
+*   cb：注册一个异步回调函数，开发人员需要实现StringCallback接口，当服务器节点创建完毕后，ZooKeeper客户端就会自动调用如下方法：
+
+    <code>void processResult(int rc, String path, Object ctx, String name);</code>
+
+*   ctx：用于传递一个对象，可以在回调方法执行的时候使用，通常是放一个上下文（Context）信息
+
+ZooKeeper不支持递归创建，即无法在父节点不存在的情况下创建一个子节点。
+
+如果应用场景没有太高的权限要求，那么可以不关注这个参数，只需要在acl参数中传入参数Ids.OPEN_ACL_UNSAFE，这就表明之后对这个节点的任何操作都不受权限控制。
+
+回调方法processResult方法参数说明：
+
+*   rc：Result Code，服务端响应码。
+    *   0（OK）：接口调用成功。
+    *   -4（CnnectionLoss）：客户端和服务端连接已断开。
+    *   -110（NodeExists）：指定节点已存在。
+    *   -112（SessionExpired）：会话已过期
+*   path：接口调用时传入API的数据节点的节点路径参数值
+*   ctx：接口调用时传入API的ctx参数值
+*   name：实际在服务端创建的节点名。
+
+### 5.3.3 删除节点
+
+有如下同步和异步两个接口：
+
+    public void delete(final String path, int version)
+    public void delete(final String path, int version, VoidCallback cb, Object ctx)
+
+参数说明：
+
+*   path：指定数据节点的节点路径
+*   version：指定节点的数据版本
+*   cb：注册一个异步回调函数
+*   ctx：用于传递上下文信息的对象
+
+在ZooKeeper中，只允许删除叶子节点。
+
+### 5.3.4 读取数据
+
+#### getChildren
+
+获取一个节点的所有子节点
+
+参数说明：
+
+*   path：指定数据节点的节点路径
+*   watcher：注册的Watcher。一旦在本次子节点获取之后，子节点列表发生变更的话，那么就会向客户端发送通知。该参数允许传入null
+*   watch：表名是否需要注册一个Watcher。如果这个参数是true，那么ZooKeeper客户端会自动使用默认Watcher；如果是false，表明不需要注册Watcher
+*   cb：注册一个异步回调函数
+*   ctx：用于传递上下文信息的对象
+*   stat：指定数据节点的节点状态信息。用法是在接口中传入一个旧的stat变量，该stat变量会在方法执行过程中，被来自服务端响应的新stat对象替换
+
+当注册了Watcher，当有子节点被添加或是删除时，服务端就会向客户端发送一个NodeChildrenChanged(EventType.NodeChildrenChanged)类型的事件通知。需要注意的是，在服务端发送给客户端的事件通知中，是不包含最新的节点列表的，客户端必须主动重新进行获取。
+
+由于Watcher通知是一次性的，即一旦触发一次通知后，该Watcher就失效了，因此客户端需要反复注册Watcher。
+
+#### getData
+
+获取一个节点的数据内容。
+
+参数说明：
+
+*   path：指定数据节点的节点路径
+*   watcher：注册的Watcher。
+*   stat：指定数据节点的节点状态信息。
+*   watch：表明是否需要注册一个Watcher。
+*   cb：注册一个异步回调函数
+*   ctx：用于传递上下文信息的对象
+
+数据内容或是数据版本变化，都会触发服务端的NodeDataChanged通知。
+
+### 5.3.5 更新数据
+
+更新一个节点的数据内容。
+
+两个接口（同步、异步）：
+
+    Stat setData(final String path, byte data[], int version);
+    void setData(final String path, byte data[], int version, StatCallback cb, Object ctx);
+
+version参数的意义：CAS
+
+### 5.3.6 检测节点是否存在
+
+4个接口：
+
+    public Stat exists(final String path, Watcher watcher);
+    public Stat exists(String path, boolean watch);
+    public void exists(final String path, Watcher watcher, StatCallback cb, Object ctx);
+    public void exists(String path, boolean watch, StatCallback cb, Object ctx);
+
+如果在调用接口时注册Watcher的话，还可以对节点是否存在进行监听——一旦节点被创建、被删除或是数据被更新，都会通知客户端。
+
+*   无论指定节点是否存在，通过调用exists接口都可以注册Watcher。
+*   exists接口中注册的Watcher，能够对节点创建、节点删除和节点数据更新事件进行监听。
+*   对于指定节点的子节点的各种变化，都不会通知客户端。
+
+### 5.3.7 权限控制
+
+开发人员如果要使用ZooKeeper的权限控制功能，需要在完成ZooKeeper会话创建后，给该会话添加上相关的权限信息（AuthInfo）。ZooKeeper客户端提供了响应的API接口来进行权限信息的设置，如下：
+
+    addAuthInfo(String scheme, byte[] auth);
+
+参数说明：
+
+*   scheme：权限控制模式，分为world、auth、digest、ip和super
+*   auth：具体的权限信息
+
+当客户端对一个数据节点添加了权限信息后，对于删除操作而言，其作用范围是其子节点。
     
