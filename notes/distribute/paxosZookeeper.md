@@ -1014,4 +1014,95 @@ version参数的意义：CAS
 *   auth：具体的权限信息
 
 当客户端对一个数据节点添加了权限信息后，对于删除操作而言，其作用范围是其子节点。
+
+## 5.4 开源客户端
+
+### 5.4.1 ZkClient
+
+ZkClient是Github上一个开源的ZooKeeper客户端。
+
+ZkClient在ZooKeeper原生API接口之上进行了包装，是一个更易用的ZooKeeper客户端。同时，ZkClient在内部实现了诸如Session超时重连，Watcher反复注册等功能，使得ZooKeeper客户端的这些繁琐的细节工作对开发人员透明。
+
+#### 创建会话
+
+参数说明：
+
+*   zkServers：指ZooKeeper服务器列表
+*   sessionTimeout：会话超时时间，单位为毫秒
+*   connectionTimeout：连接创建超时时间，单位为毫秒
+*   connection：IZkConnection接口的实现类
+*   zkSerializer：自定义序列化器
+
+IZkConnection接口是对ZooKeeper原生接口最直接的包装，也是和ZooKeeper最直接的交互层，里面包含了添、删、改、查等一系列接口的定义。
+
+ZkClient中定义了ZkSerializer接口，允许用户传入一个序列化实现。
+
+ZkClient构造方法中，不再提供传入Watcher对象的参数了。ZkClient引入了大多数Java程序都使用过的Listener来实现Watcher注册。
+
+#### 创建节点
+
+createEphemeral接口是创建临时节点，而createPersistentSequential接口则是创建持久顺序节点。
+
+通过createParents这个参数，ZkClient能够在内部帮助我们递归建立父节点。
+
+#### 删除节点
+
+deleteRecursive这个接口将自动帮我们完成逐层删除节点的工作。
+
+#### 读取数据
+
+##### getChildren
+
+    List<String> getChildren(String path);
+
+可以通过如下API来进行注册监听：
+
+    List<String> subscribeChildChanges(String path, IZkChildListener listener);
+
+Listener接口的定义：
+
+    public interface IZkChildListener {
+        public void handleChildChange(String parentPath, List<String> currentChildrens);
+    }
+
+结论：
+
+*   客户端可以对一个不存在的节点进行子节点变更的监听。
+*   一旦客户端对一个节点注册了子节点列表变更监听之后，那么当该节点的子节点列表发生变更的时候，服务端都会通知客户端，并将最新的子节点列表发送给客户端。
+*   该节点本身的创建或删除也会通知到客户端。
+
+ZkClient的Listener不是一次性的，客户端只需要注册一次就会一直生效。
+
+##### getData
+
+接口：
+
+    <T extends Object> T readData(String path);
+    <T extends Object> T readData(String path, boolean returnNullIfPathNotExists);
+    <T extends Object> T readData(String path, Stat stat);
+
+该接口对服务端时间的监听，同样是通过注册指定的Listener来实现的：
+
+    public interface IZkDataListener {
+        public void handleDataChange(String dataPath, Object data) throws Exception;
+        public void handleDataDeleted(String dataPath) throws Exception;
+    }
     
+#### 更新数据
+
+接口：
+    
+    void writeData(String path, Object data);
+    void writeData(final String path, Object data, final int expectedVersion);
+
+#### 检测节点是否存在
+
+接口：
+
+    boolean exists(final String path);
+
+### 5.4.2 Curator
+
+* Guava is to Java what Curator is to ZooKeeper *
+
+除了封装一些开发人员不需要特别关注的底层细节之外，Curator还在ZooKeeper原生API的基础上进行了包装，提供了一套易用性和可读性更强的Fluent风格的客户端API框架。
