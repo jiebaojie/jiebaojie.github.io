@@ -147,7 +147,7 @@ Docker需要安装在64位的x86平台或ARM平台上（如树莓派），并且
 
 	$ sudo apt-get install docker-engine
 	
-### 启动Docker引擎
+#### 启动Docker引擎
 
 Ubuntu 12.04/14.04、Debian 7 Wheezy：
 
@@ -158,7 +158,7 @@ Ubuntu 16.04、Debian 8 Jessie/Stretch：
 	$ sudo systemctl enable docker
 	$ sudo systemctl start docker
 	
-### 建立docker用户组
+#### 建立docker用户组
 
 默认情况下， docker 命令会使用 Unix socket 与 Docker 引擎通讯。而只有root 用户和 docker 组的用户才可以访问 Docker 引擎的 Unix socket。出于安全考虑，一般 Linux 系统上不会直接使用 root 用户。因此，更好地做法是将需要使用 docker 的用户加入 docker 用户组。
 
@@ -174,3 +174,93 @@ Ubuntu 16.04、Debian 8 Jessie/Stretch：
 
 *	[Docker官方Ubuntu安装文档](https://docs.docker.com/engine/installation/linux/ubuntulinux/)
 *	[Docker官方Debian安装文档](https://docs.docker.com/engine/installation/linux/debian/)
+
+## CentOS
+
+### 系统要求
+
+Docker 最低支持 CentOS 7。
+
+Docker 需要安装在 64 位的平台，并且内核版本不低于 3.10
+
+### 使用脚本自动安装
+
+	curl -sSL https://get.docker.com/ | sh
+
+### 手动安装
+
+#### 添加内核参数
+
+	$ sudo tee -a /etc/sysctl.conf <<-EOF
+	net.bridge.bridge-nf-call-ip6tables = 1
+	net.bridge.bridge-nf-call-iptables = 1
+	EOF
+
+重新加载sysctl.conf：
+	
+	$ sudo sysctl -p
+
+#### 添加yum源
+
+	$ sudo tee /etc/yum.repos.d/docker.repo <<-'EOF'
+	[dockerrepo]
+	name=Docker Repository
+	baseurl=https://yum.dockerproject.org/repo/main/centos/7/
+	enabled=1
+	gpgcheck=1
+	gpgkey=https://yum.dockerproject.org/gpg
+	EOF
+
+#### 安装Docker
+
+	$ sudo yum update
+	$ sudo yum install docker-engine
+
+#### 启动Docker引擎
+
+	$ sudo systemctl enable docker
+	$ sudo systemctl start docker
+
+#### 建立docker用户组
+
+	$ sudo groupadd docker
+	$ sudo usermod -aG docker $USER
+
+### 参考文档
+
+*	[Docker 官方 CentOS 安装文档](https://docs.docker.com/engine/installation/linux/centos/)
+
+## macOS
+
+### 系统要求
+
+Docker for Mac 要求系统最低为 macOS 10.10.3 Yosemite，或者 2010 年以后的 Mac 机型，准确说是带 Intel MMU 虚拟化的，最低 4GB 内存。
+
+### 安装
+
+#### 使用Homebrew安装
+
+	brew cask install docker
+
+#### 手动下载安装
+
+下载链接：https://download.docker.com/mac/stable/Docker.dmg
+
+配置加速器
+
+启动终端后，通过命令可以检查安装后的 Docker 版本。
+
+	$ docker --version
+	$ docker-compose --version
+	$ docker-machine --version
+
+如果 docker version、docker info 都正常的话，可以运行一个 Nginx 服务器：
+
+	$ docker run -d -p 80:80 --name webserver nginx
+
+服务运行后，可以访问 http://localhost，如果看到了 "Welcome to nginx!"，就说明 Docker for Mac 安装成功了。
+
+要停止 Nginx 服务器并删除执行下面的命令：
+
+	$ docker stop webserver
+	$ docker rm webserver
