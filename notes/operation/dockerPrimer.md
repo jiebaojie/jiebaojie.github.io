@@ -427,3 +427,113 @@ Docker 提供了一个 docker commit 命令，可以将容器的存储层保存�
 使用 docker commit 命令虽然可以比较直观的帮助理解镜像分层存储的概念，但是实际环境中并不会这样使用。
 
 docker commit 命令除了学习之外，还有一些特殊的应用场合，比如被入侵后保存现场等。但是，不要使用 docker commit 定制镜像，定制行为应该使用 Dockerfile 来完成。
+
+## 使用Dockerfile定制镜像
+
+### 使用Dockerfile定制镜像
+
+镜像的定制实际上就是定制每一层所添加的配置、文件。如果我们可以把每一层修改、安装、构建、操作的命令都写入一个脚本，用这个脚本来构建、定制镜像，那么之前提及的无法重复的问题、镜像构建透明性的问题、体积的问题就都会解决。这个脚本就是 Dockerfile。
+
+Dockerfile 是一个文本文件，其内包含了一条条的指令(Instruction)，每一条指令构建一层，因此每一条指令的内容，就是描述该层应当如何构建。
+
+在一个空白目录中，建立一个文本文件，并命名为 Dockerfile：
+
+	$ mkdir mynginx
+	$ cd mynginx
+	$ touch Dockerfile
+	
+其内容为：
+	
+	FROM nginx
+	RUN echo '<h1>Hello, Docker!</h1>' > /usr/share/nginx/html/index.html
+
+### FROM指定基础镜像
+
+FROM 就是指定基础镜像，因此一个 Dockerfile 中 FROM 是必备的指令，并且必须是第一条指令。
+
+Docker 还存在一个特殊的镜像，名为scratch 。这个镜像是虚拟的概念，并不实际存在，它表示一个空白的镜像。
+
+	FROM scratch
+	...
+	
+如果你以 scratch 为基础镜像的话，意味着你不以任何镜像为基础，接下来所写的指令将作为镜像第一层开始存在。
+
+### RUN执行命令
+
+两种格式：
+
+*	shell格式：RUN <命令>
+*	exec格式： RUN ["可执行文件", "参数1", "参数2"]，这更像是函数调用中的格式。
+
+在撰写 Dockerfile 的时候，要经常提醒自己，这并不是在写 Shell 脚本，而是在定义每一层该如何构建。
+
+Dockerfile 支持 Shell 类的行尾添加 \ 的命令换行方式，以及行首 # 进行注释的格式。
+
+。因此镜像构建时，一定要确保每一层只添加真正需要添加的东西，任何无关的东西都应该清理掉。很多人初学 Docker 制作出了很臃肿的镜像的原因之一，就是忘记了每一层构建的最后一定要清理掉无关文件。
+
+	FROM debian:jessie
+	RUN buildDeps='gcc libc6-dev make' \
+		&& apt-get update \
+		&& apt-get install -y $buildDeps \
+		&& wget -O redis.tar.gz "http://download.redis.io/releases/redis-3.2.5.tar.gz" \
+		&& mkdir -p /usr/src/redis \
+		&& tar -xzf redis.tar.gz -C /usr/src/redis --strip-components=1 \
+		&& make -C /usr/src/redis \
+		&& make -C /usr/src/redis install \
+		&& rm -rf /var/lib/apt/lists/* \
+		&& rm redis.tar.gz \
+		&& rm -r /usr/src/redis \
+		&& apt-get purge -y --auto-remove $buildDeps
+
+### 构建镜像
+
+在 Dockerfile 文件所在目录执行：
+	
+	$ docker build -t nginx:v3 .
+	Sending build context to Docker daemon 2.048 kB
+	Step 1 : FROM nginx
+	---> e43d811ce2f4
+	Step 2 : RUN echo '<h1>Hello, Docker!</h1>' > /usr/share/nginx/html/index.html
+	---> Running in 9cdc27646c7b
+	---> 44aa4490ce2c
+	Removing intermediate container 9cdc27646c7b
+	Successfully built 44aa4490ce2c
+	
+### 镜像构建上下文(Context)
+
+。当构建的时候，用户会指定构建镜像上下文的路径， docker build 命令得知这个路径后，会将路径下的所有内容打包，然后上传给 Docker 引擎。这样 Docker 引擎收到这个上下文包后，展开就会获得构建镜像所需的一切文件。
+
+理解刚才的命令 docker build -t nginx:v3 . 中的这个 . ，实际上是在指定上下文的目录， docker build 命令会将该目录下的内容打包交给 Docker 引擎以帮助构建镜像。
+
+	$ docker build -t nginx:v3 .
+	Sending build context to Docker daemon 2.048 kB
+	
+一般来说，应该会将 Dockerfile 至于一个空目录下，或者项目根目录下。如果该目录下没有所需文件，那么应该把所需文件复制一份过来。如果目录下有些东西确实不希望构建时传给 Docker 引擎，那么可以用 .gitignore 一样的语法写一个 .dockerignore ，该文件是用于剔除不需要作为上下文传递给 Docker 引擎的。
+
+### 其它docker build的用法
+
+#### 直接用Git repo进行构建
+
+	$ docker build https://github.com/twang2218/gitlab-ce-zh.git#:8.14
+	
+这行命令指定了构建所需的 Git repo，并且指定默认的 master 分支，构建目录为 /8.14/ ，然后 Docker 就会自己去 git clone 这个项目、切换到指定分支、并进入到指定目录后开始构建。
+
+#### 用给定的tar压缩包构建
+
+	$ docker build http://server/context.tar.gz
+
+#### 从标准输入中读取Dockerfile进行构建
+
+	docker build - < Dockerfile
+	
+或
+
+	cat Dockerfile | docker build -
+
+如果标准输入传入的是文本文件，则将其视为 Dockerfile ，并开始构建。这种形式由于直接从标准输入中读取 Dockerfile 的内容，它没有上下文，因此不可以像其他方法那样可以将本地文件 COPY 进镜像之类的事情。
+
+#### 从标准输入中读取上下文压缩包进行构建
+
+	$ docker build - < context.tar.gz
+
+如果发现标准输入的文件格式是 gzip 、 bzip2 以及 xz 的话，将会使其为上下文压缩包，直接将其展开，将里面视为上下文，并开始构建。	
