@@ -264,3 +264,166 @@ Docker for Mac 要求系统最低为 macOS 10.10.3 Yosemite，或者 2010 年以
 
 	$ docker stop webserver
 	$ docker rm webserver
+	
+## 镜像加速器
+
+*	阿里云加速器
+*	DaoCloud加速器
+*	灵雀云加速器
+
+检查加速器是否生效
+
+	$ sudo ps -ef | grep dockerd
+	
+如果从结果中看到了配置的 --registry-mirror参数说明配置成功。
+
+# 镜像
+
+镜像是Docker的三大组件之一。
+
+Docker运行容器前需要本地存在对应的镜像，如果镜像不存在本地，Docker慧聪镜像仓库下载。
+
+## 获取镜像
+
+### 获取镜像
+
+	$ docker pull ubuntu:14.04
+	
+### 运行
+
+	$ docker run -it --rm ubuntu:14.04 bash
+	root@e7009c6ce357:/# cat /etc/os-release
+		NAME="Ubuntu"
+		VERSION="14.04.5 LTS, Trusty Tahr"
+		ID=ubuntu
+		ID_LIKE=debian
+		PRETTY_NAME="Ubuntu 14.04.5 LTS"
+		VERSION_ID="14.04"
+		HOME_URL="http://www.ubuntu.com/"
+		SUPPORT_URL="http://help.ubuntu.com/"
+		BUG_REPORT_URL="http://bugs.launchpad.net/ubuntu/"
+	root@e7009c6ce357:/# exit
+	exit
+	$
+	
+*	-it：这是两个参数，一个是 -i ：交互式操作，一个是 -t 终端。我们这里打算进入 bash 执行一些命令并查看返回结果，因此我们需要交互式终获取镜像终端。
+*	--rm：这个参数是说容器退出后随之将其删除。默认情况下，为了排障需求，退出的容器并不会立即删除，除非手动 docker rm 。我们这里只是随便执行个命令，看看结果，不需要排障和保留结果，因此使用 --rm 可以避免浪费空间。
+*	ubuntu:14.04：这是指用 ubuntu:14.04 镜像为基础来启动容器。
+*	bash：放在镜像名后的是命令，这里我们希望有个交互式 Shell，因此用的是 bash 。
+
+进入容器后，我们可以在 Shell 下操作，执行任何所需的命令。这里，我们执行了cat /etc/os-release ，这是 Linux 常用的查看当前系统版本的命令，从返回的结果可以看到容器内是 Ubuntu 14.04.5 LTS 系统。
+
+最后我们通过 exit 退出了这个容器。
+
+## 列出镜像
+
+### 列出镜像
+
+	$ docker images
+
+### 镜像体积
+
+Docker Hub 中显示的体积是压缩后的体积。在镜像下载和上传过程中镜像是保持着压缩状态的，因此 Docker Hub 所显示的大小是网络传输中更关心的流量大小。而 docker images 显示的是镜像下载到本地后，展开的大小，准确说，是展开后的各层所占空间的总和，因为镜像到本地后，查看空间的时候，更关心的是本地磁盘空间占用的大小。
+
+由于 Docker 镜像是多层存储结构，并且可以继承、复用，因此不同镜像可能会因为使用相同的基础镜像，从而拥有共同的层。由于 Docker 使用 Union FS，相同的层只需要保存一份即可，因此实际镜像硬盘占用空间很可能要比这个列表镜像大小的总和要小的多。
+
+### 虚悬镜像
+
+一个特殊的镜像，这个镜像既没有仓库名，也没有标签，均为 <none> 。
+
+由于新旧镜像同名，旧镜像名称被取消，从而出现仓库名、标签均为 <none> 的镜像。这类无标签镜像也被称为 虚悬镜像(dangling image) ，可以用下面的命令专门显示这类镜像：
+
+	$ docker images -f dangling=true
+	
+一般来说，虚悬镜像已经失去了存在的价值，是可以随意删除的，可以用下面的命令删除。
+
+	$ docker rmi $(docker images -q -f dangling=true)
+	
+### 中间层镜像
+
+为了加速镜像构建、重复利用资源，Docker 会利用 中间层镜像。所以在使用一段时间后，可能会看到一些依赖的中间层镜像。默认的 docker images 列表中只会显示顶层镜像，如果希望显示包括中间层镜像在内的所有镜像的话，需要加 -a 参数。
+
+	$ docker images -a
+	
+这样会看到很多无标签的镜像，与之前的虚悬镜像不同，这些无标签的镜像很多都是中间层镜像，是其它镜像所依赖的镜像。这些无标签镜像不应该删除，否则会导致上层镜像因为依赖丢失而出错。实际上，这些镜像也没必要删除，因为相同的层只会存一遍，而这些镜像是别的镜像的依赖，因此并不会因为它们被列出来而多存了一份，无论如何你也会需要它们。只要删除那些依赖它们的镜像后，这些依赖的中间层镜像也会被连带删除。
+
+### 列出部分镜像
+
+	$ docker images ubuntu
+	$ docker images ubuntu:16.04
+	$ docker images -f since=mongo:3.2
+	$ docker images -f before=mongo:3.2
+	$ docker images -f lable=com.example.version=0.1
+	
+### 以特定格式显示
+
+	$ docker images -q
+	5f515359c7f8
+	05a60462f8ba
+	fe9198c04d62
+	00285df0df87
+	f753707788c5
+	f753707788c5
+	1e0c3dd64ccd
+	
+--filter 配合 -q 产生出指定范围的 ID 列表，然后送给另一个 docker 命令作为参数
+
+下面的命令会直接列出镜像结果，并且只包含镜像ID和仓库名：
+
+	$ docker images --format "{{.ID}}: {{.Repository}}"
+	
+自己定义列：
+
+	$ docker images --format "table {{.ID}}\t{{.Repository}}\t{{.Tag}}"
+	
+## 利用commit理解镜像构成
+
+### 利用commit理解镜像构成
+
+镜像是容器的基础，每次执行 docker run 的时候都会指定哪个镜像作为容器运行的基础。
+
+	$ docker run --name webserver -d -p 80:80 nginx
+	
+这条命令会用 nginx 镜像启动一个容器，命名为 webserver ，并且映射了 80 端口，这样我们可以用浏览器去访问这个 nginx 服务器。
+
+现在，假设我们非常不喜欢这个欢迎页面，我们希望改成欢迎 Docker 的文字，我们可以使用 docker exec 命令进入容器，修改其内容。
+
+	$ docker exec -it webserver bash
+	root@3729b97e8226:/# echo '<h1>Hello, Docker!</h1>' > /usr/share/nginx/html/index.html
+	root@3729b97e8226:/# exit
+	exit
+
+我们修改了容器的文件，也就是改动了容器的存储层。我们可以通过 docker diff 命令看到具体的改动。
+
+	$ docker diff webserver
+
+Docker 提供了一个 docker commit 命令，可以将容器的存储层保存下来成为镜像。换句话说，就是在原有镜像的基础上，再叠加上容器的存储层，并构成新的镜像。以后我们运行这个新镜像的时候，就会拥有原有容器最后的文件变化。
+
+	$ docker commit \
+		--author "Tao Wang <twang2218@gmail.com>" \
+		--message "修改了默认网页" \
+		webserver \
+		nginx:v2
+	sha256:07e33465974800ce65751acc279adc6ed2dc5ed4e0838f8b86f0c87aa1795214
+
+其中 --author 是指定修改的作者，而 --message 则是记录本次修改的内容。
+
+我们可以在 docker images 中看到这个新定制的镜像：
+
+	$ docker images nginx
+	
+可以用 docker history 具体查看镜像内的历史记录：
+
+	$ docker history nginx:v2
+	
+新的镜像定制好后，我们可以来运行这个镜像。
+
+	$ docker run --name web2 -d -p 81:80 nginx:v2
+
+这里我们命名为新的服务为 web2 ，并且映射到 81 端口。
+
+### 慎用docker commit
+
+使用 docker commit 命令虽然可以比较直观的帮助理解镜像分层存储的概念，但是实际环境中并不会这样使用。
+
+docker commit 命令除了学习之外，还有一些特殊的应用场合，比如被入侵后保存现场等。但是，不要使用 docker commit 定制镜像，定制行为应该使用 Dockerfile 来完成。
