@@ -536,4 +536,135 @@ Dockerfile 支持 Shell 类的行尾添加 \ 的命令换行方式，以及行�
 
 	$ docker build - < context.tar.gz
 
-如果发现标准输入的文件格式是 gzip 、 bzip2 以及 xz 的话，将会使其为上下文压缩包，直接将其展开，将里面视为上下文，并开始构建。	
+如果发现标准输入的文件格式是 gzip 、 bzip2 以及 xz 的话，将会使其为上下文压缩包，直接将其展开，将里面视为上下文，并开始构建。
+
+## Dockerfile指令详解
+
+### COPY复制文件
+
+格式：
+
+	*	COPY <源路径>... <目标路径>
+	*	COPY ["<源路径1>",... "<目标路径>"]
+
+	COPY package.json /usr/src/app/
+	COPY hom* /mydir/
+	COPY hom?.txt /mydir/
+	
+### ADD更高级的复制文件
+
+如果 <源路径> 为一个 tar 压缩文件的话，压缩格式为 gzip , bzip2 以及 xz 的情况下， ADD 指令将会自动解压缩这个压缩文件到 <目标路径> 去。
+
+	FROM scratch
+	ADD ubuntu-xenial-core-cloudimg-amd64-root.tar.gz /
+	
+但在某些情况下，如果我们真的是希望复制个压缩文件进去，而不解压缩，这时就不可以使用 ADD 命令了。
+
+在 COPY 和 ADD 指令中选择的时候，可以遵循这样的原则，所有的文件复制均使用 COPY 指令，仅在需要自动解压缩的场合使用 ADD 。
+
+### CMD容器启动命令
+
+格式：
+
+*	shell 格式： CMD <命令>
+*	exec 格式： CMD ["可执行文件", "参数1", "参数2"...]
+
+CMD 指令就是用于指定默认的容器主进程的启动命令的。
+
+在运行时可以指定新的命令来替代镜像设置中的这个默认命令，比如， ubuntu 镜像默认的 CMD 是 /bin/bash ，如果我们直接 docker run -it ubuntu 的话，会直接进入 bash 。我们也可以在运行时指定运行别的命令，如 docker run -it ubuntu cat /etc/os-release 。这就是用 cat /etc/os-release命令替换了默认的 /bin/bash 命令了，输出了系统版本信息。
+
+在指令格式上，一般推荐使用 exec 格式，这类格式在解析时会被解析为 JSON 数组，因此一定要使用双引号 " ，而不要使用单引号。
+
+如果使用 shell 格式的话，实际的命令会被包装为 sh -c 的参数的形式进行执行。比如：
+
+	CMD echo $HOME
+	
+在实际执行中，会将其变更为：
+
+	CMD [ "sh", "-c", "echo $HOME" ]
+
+Docker 不是虚拟机，容器中的应用都应该以前台执行，而不是像虚拟机、物理机里面那样，用 upstart/systemd 去启动后台服务，容器内没有后台服务的概念。
+
+一些初学者将 CMD 写为：
+
+	CMD service nginx start
+	
+然后发现容器执行后就立即退出了。甚至在容器内去使用 systemctl 命令结果却发现根本执行不了。
+
+对于容器而言，其启动程序就是容器应用进程，容器就是为了主进程而存在的，主进程退出，容器就失去了存在的意义，从而退出，其它辅助进程不是它需要关心的东西。
+
+正确的做法是直接执行 nginx 可执行文件，并且要求以前台形式运行。比如：
+
+	CMD ["nginx" "-g" "daemon off;"]
+
+### ENTRYPOINT入口点
+
+ENTRYPOINT 的格式和 RUN 指令格式一样，分为 exec 格式和 shell 格式。
+
+ENTRYPOINT 的目的和 CMD 一样，都是在指定容器启动程序及参数。 ENTRYPOINT 在运行时也可以替代，不过比 CMD 要略显繁琐，需要通过 docker run 的参数 --entrypoint 来指定。
+
+当指定了 ENTRYPOINT 后， CMD 的含义就发生了改变，不再是直接的运行其命令，而是将 CMD 的内容作为参数传给 ENTRYPOINT 指令。
+
+#### 场景一：让镜像变成像命令一样使用
+
+	FROM ubuntu:16.04
+	RUN apt-get update \
+		&& apt-get install -y curl \
+		&& rm -rf /var/lib/apt/lists/*
+	CMD [ "curl", "-s", "http://ip.cn" ]
+	
+假如我们使用 docker build -t myip . 来构建镜像的话，如果我们需要查询当前公网 IP，只需要执行：
+
+	$ docker run myip
+
+如果我们希望显示 HTTP 头信息，就需要加上 -i 参数。那么我们可以直接加 -i 参数给 docker run myip 么？
+
+	$ docker run myip -i
+	docker: Error response from daemon: invalid header field value "oci runtime error: container_linux.go:247: starting container process caused \"exec: \\\"-i\\\": executable file not found in $PATH\"\n".
+
+这里的 -i 替换了远了的 CMD ，而不是添加在原来的 curl -s http://ip.cn 后面。而 -i 根本不是命令，所以自然找不到。
+
+那么如果我们希望加入 -i 这参数，我们就必须重新完整的输入这个命令：
+
+	$ docker run myip curl -s http://ip.cn -i
+	
+这显然不是很好的解决方案，而使用 ENTRYPOINT 就可以解决这个问题。
+
+	FROM ubuntu:16.04
+	RUN apt-get update \
+		&& apt-get install -y curl \
+		&& rm -rf /var/lib/apt/lists/*
+	ENTRYPOINT [ "curl", "-s", "http://ip.cn" ]
+
+这次我们再来尝试直接使用 docker run myip -i ：
+
+	$ docker run myip -i
+	
+当存在 ENTRYPOINT 后， CMD 的内容将会作为参数传给 ENTRYPOINT ，而这里 -i 就是新的 CMD ，因此会作为参数传给 curl ，从而达到了我们预期的效果。
+
+#### 场景二：应用运行前的准备工作
+
+参考官方镜像redis的做法：
+
+	FROM alpine:3.4
+	...
+	RUN addgroup -S redis && adduser -S -G redis redis
+	...
+	ENTRYPOINT ["docker-entrypoint.sh"]
+	
+	EXPOSE 6379
+	CMD [ "redis-server" ]
+	
+可以看到其中为了 redis 服务创建了 redis 用户，并在最后指定了 ENTRYPOINT 为 docker-entrypoint.sh 脚本。
+
+	#!/bin/sh
+	...
+	# allow the container to be started with `--user`
+	if [ "$1" = 'redis-server' -a "$(id -u)" = '0' ]; then
+		chown -R redis .
+		exec su-exec redis "$0" "$@"
+	fi
+	
+	exec "$@"
+	
+该脚本的内容就是根据 CMD 的内容来判断，如果是 redis-server 的话，则切换到 redis 用户身份启动服务器，否则依旧使用 root 身份执行。
