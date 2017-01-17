@@ -1447,3 +1447,79 @@ FIFO队列类似于一个全写的共享锁模型，所有客户端都会到某�
 ### 小结
 
 ## 6.2 ZooKeeper在大型分布式系统中的应用
+
+### 6.2.1 Hadoop
+
+Hadoop是Apache开源的一个大型分布式计算框架
+
+自0.23.0版本开始，Hadoop又引入了全新一代MapReduce框架YARN。
+
+在Hadoop中，ZooKeeper主要用于实现HA（High Availability），这部分逻辑主要集中在Hadoop Common的HA模块中，HDFS的NameNode与ResourceManager都是基于此HA模块来实现自己的HA功能的。在YARN中又特别提供了ZooKeeper来存储应用的运行状态。
+
+#### YARN介绍
+
+YARN是Hadoop为了提高计算节点Master(JT)的扩展性，同时为了支持多计算模型和提供资源的细粒度调度而引入的全新一代分布式调度框架。其上可以支持MapReduce计算引擎，也支持其他的一些计算引擎，如Tez、Spark、Storm、Imlala和Open MPI等。
+
+YARN架构体系：
+
+![](/img/notes/distribute/paxosZookeeper/yarn_architecture.jpg)
+
+#### ResourceManager单点问题
+
+上述架构的明显缺陷：ResourceManager的单点问题。
+
+#### ResurceManager HA
+
+Active/Standby模式
+
+#### 主备切换
+
+ResourceManager使用基于ZooKeeper实现的ActiveStandbyElector组件来确定ResourceManager的状态：
+
+1.  创建临时锁节点，创建成功的那个ResourceManager就切换为Active状态
+2.  注册Watcher监听
+3.  主备切换
+
+#### Fencing（隔离）
+
+Rm1出现假死后，ZooKeeper就会将其创建的锁节点移除掉，此时RM2会创建响应的锁节点，并切换为Active状态。RM1恢复之后，会试图去更新ZooKeeper的相关数据，但是此时发现其没有权限更新ZooKeeper的相关节点数据，于是就自动切换为Standby状态，这样就避免了“脑裂”现象的出现。
+
+#### ResourceManager状态存储
+
+在ResourceManager中，RMStateStore能够存储一些RM的内部状态信息，提供三种可能的实现：
+
+*   基于内存实现，一般是用于日常开发测试。
+*   基于文件系统的实现，如HDFS。
+*   基于ZooKeeper的实现。
+
+#### 小结
+
+ZooKeeper出色的分布式协调功能是Hadoop解决单点和状态信息存储的重要组件。
+
+### 6.2.2 HBase
+
+HBase，全称Hadoop Database，是Google Bigtable的开源实现，是一个基于Hadoop文件系统设计的面向海量数据的高可靠性、高性能、面向列、可伸缩的分布式存储系统。
+
+![](/img/notes/distribute/paxosZookeeper/hbase_architecture.jpg)
+
+ZooKeeper是串联起HBase集群与Client的关键所在。
+
+#### 系统容错
+
+HBase没有使用HMaster直接通过心跳机制来管理RegionServer状态，因为在这种方式下，随着系统容量的不断增加，HMaster的管理负担会越来越重，另外它自身也有挂掉的可能，因此数据还需要有持久化的必要。在这种情况下，ZooKeeper就成为了理想的选择。
+
+#### RootRegion管理
+
+对于HBase集群来说，数据存储的位置信息是记录在元数据分片，也就是RootRegion上的。每次客户端发起新的请求，需要知道数据的位置，就会去查询RootRegion，而RootRegion自身的位置则是记录在ZooKeeper上的。
+
+#### Region状态管理
+
+Region是HBase中数据的物理切片，每个Region中记录了全局数据的一小部分，并且不同的Region之间的数据是相互不重复的。
+
+Region状态管理依靠ZooKeeper做到的。
+
+#### 分布式SplitLog任务管理
+
+当某台RegionServer服务挂掉时，由于总有一部分心写入的数据还没有持久化到HFile中，因此在迁移该RegionServe的服务时，一个重要的工作就是从HLog中恢复这部分还在内存中的数据，而这部分工作最关键的一步就是SplitLog，即HMaster需要遍历该RegionServer服务器的HLog，并按Region切分成小块移动到新的地址下，并进行数据的Replay。
+
+这个Hlog的任务分配给多台RegionServer服务器来共同处理的（分布式），需要一个持久化组件来辅助HMaster完成任务的分配。ZooKeeper在这里担负起了分布式集群中相互通知和信息持久化的角色。
