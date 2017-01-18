@@ -1523,3 +1523,49 @@ Region状态管理依靠ZooKeeper做到的。
 当某台RegionServer服务挂掉时，由于总有一部分心写入的数据还没有持久化到HFile中，因此在迁移该RegionServe的服务时，一个重要的工作就是从HLog中恢复这部分还在内存中的数据，而这部分工作最关键的一步就是SplitLog，即HMaster需要遍历该RegionServer服务器的HLog，并按Region切分成小块移动到新的地址下，并进行数据的Replay。
 
 这个Hlog的任务分配给多台RegionServer服务器来共同处理的（分布式），需要一个持久化组件来辅助HMaster完成任务的分配。ZooKeeper在这里担负起了分布式集群中相互通知和信息持久化的角色。
+
+#### Replication管理
+
+实现HBase中主备集群间的实时同步的重要模块。
+
+ZooKeeper上保存断点信息
+
+#### ZooKeeper部署
+
+HBase的启动脚本(hbase-env.sh)中可以选择是由HBase启动其自带的默认ZooKeeper，还是使用一个已有的外部ZooKeeper集群。一般的建议是使用第二种方式。
+
+#### 小结
+
+HBase对于ZooKeeper的依赖还有：
+
+*   HMaster依赖ZooKeeper来完成ActiveMaster的选举
+*   BackupMaster的实时接管
+*   Table的enable/disable状态记录
+*   HBase中几乎所有的元数据存储都是放在ZooKeeper上的
+*   HBase甚至还通过ZooKeeper来实现DrainingServer这样的增强功能（相当于降级标志）。
+
+HBase中所有对ZooKeeper的操作都封装在了org.apache.hadoop.hbase.zookeeper这个包中。
+
+### 6.2.3 Kafka
+
+Kafka主要用于实现低延迟的发送和收集大量的事件和日志数据。
+
+Kafka是一个吞吐量极高的分布式消息系统，其整体设计是典型的发布与订阅模式系统。在Kafka集群中，没有“中心主节点”的概念，集群中所有的服务器都是对等的，因此，可以在不做任何配置更改的情况下实现服务器的添加与删除，同样，消息的生产者和消费者也能够做到随意重启和机器的上下线。
+
+![](/img/notes/distribute/paxosZookeeper/kafka_producer_consumer.png)
+
+#### 术语介绍
+
+*   **消息生产者**，即Producer，是消息产生的源头，负责生成消息并发送到Kafka服务器上
+*   **消息消费者**，即Consumer，是消息的使用方，负责消费Kafka服务器上的消息。
+*   **主题**，即Topic，由用户定义并配置在Kafka服务端，用于建立生产者和消费者之间的订阅关系：生产者发送消息到指定Topic下，消费者从这个Topic下消费消息。
+*   **消息分区**，即Partition，一个Topic下面会分为多个分区。消费分区机制和分区的数量与消费者的负载均衡机制有很大关系。
+*   **Broker**，即Kafka的服务器，用于存储消息。
+*   **消费者分组**，即Group，用于归组同类消费者。在Kafka中，多个消费者可以共同消费一个Topic下的消息，每个消费者消费其中的部分消息，这些消费者就组成了一个分组，拥有同一个分组的名称，通常也被称为消费者集群。
+*   **Offset**，消息存储在Kafka的Broker上，消费者拉取消息数据的过程中需要知道消息在文件中的偏移量，这个偏移量就是所谓的Offset。
+
+#### Broker注册
+
+每个Broker的服务器在启动时，都会到ZooKeeper上进行注册，即到Broker节点下创建属于自己的节点。创建完Broker节点后，每个Broker就会将自己的IP地址和端口等信息写入到该节点中去。
+
+Broker创建的节点是一个临时节点，也就是说，一旦这个Broker的服务器宕机或是下线后，那么对应的Broker节点也就被删除了。因此我们可以通过ZooKeeper上Broker节点的变化情况来动态表征Broker服务器的可用性。
