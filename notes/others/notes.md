@@ -20,3 +20,5 @@ date: 2016-11-29 00:00:00
 **Apache Ignite**：http://ignite.apache.org/features.html、https://www.zybuluo.com/liyuj/note/230739
 
 **Zeppelin**：https://www.zybuluo.com/liyuj/note/230739
+
+**NTLM**：NT LAN Manager
