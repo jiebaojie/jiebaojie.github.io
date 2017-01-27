@@ -445,3 +445,289 @@ HashMap同样不是线程安全的。当你使用多线程访问HashMap时，也
 在Java中，Integer属于不变对象，也就是对象一旦被创建，就不可能被修改。
 
 ## 2.9 参考文献
+
+# 第3章 JDK并发包
+
+## 3.1 多线程的团队协作：同步控制
+
+### 3.1.1 synchronized的功能扩展：重入锁
+
+重入锁可以完全替代synchronized关键字。在JDK 5.0的早期版本中，重入锁的性能远远好于synchronized，但从JDK 6.0开始，JDK在synchronized上做了大量的优化，使得两者的性能差距并不大。
+
+	public class ReenterLock implements Runnable {
+		public static ReentrantLock lock = new ReentrantLock();
+		public static int i = 0;
+		
+		@Override
+		public void run() {
+			for (int j = 0; j < 10000000; j++) {
+				lock.lock();
+				try {
+					i++;
+				} finally {
+					lock.unlock();
+				}
+			}
+		}
+		
+		public static void main(String[] args) throws InterruptedException {
+			ReenterLock tl = new ReenteerLock();
+			Thread t1 = new Thread(tl);
+			Thread t2 = new Thread(tl);
+			t1.start();
+			t2.start();
+			t1.join();
+			t2.join();
+			System.out.println(i);
+		}
+	}
+	
+与synchonized相比，重入锁有着显示的操作过程。开发人员必须手动指定何时加锁，何时释放锁。
+
+重入锁是可以反复进入的：
+
+	lock.lock();
+	lock.lock();
+	try {
+		i++;
+	} finally {
+		lock.unlock();
+		lock.unlock();
+	}
+	
+#### 中断响应
+
+对于synchronized来说，如果一个线程在等待锁，那么结果只有两种情况，要么它获得这把锁继续执行，要么它就保持等待。而使用重入锁，则提供另外一种可能，那就是线程可以被中断。也就是在等待锁的过程中，程序可以根据需要取消对锁的请求。
+
+	lock.lockInterrupibly();
+	
+对锁的请求，统一使用上述方法，这是一个可以对中断进行响应的锁申请动作，即在等待锁的过程中，可以响应中断。
+
+#### 锁申请等待限时
+
+除了等待外部通知之外，要避免死锁还有另外一种方法，那就是限时等待。
+
+可以使用tryLock()方法进行一次限时的等待
+
+	lock.tryLock(5, TimeUnit.SECONDS);
+	
+ReentrantLock.tryLock()方法也可以不带参数直接运行。在这种情况下，当前线程会尝试获得锁，如果锁并未被其他线程占用，则申请锁会成功，并立即返回true。如果锁被其他线程占用，则当前线程不会进行等待，而是立即返回false。
+
+#### 公平锁
+
+我们使用synchronized关键字进行锁控制，那么产生的锁就是非公平的。而重入锁允许我们对其公平性进行设置。它有一个如下的构造函数：
+
+	public ReentrantLock(boolean fair)
+	
+公平锁看起来很优美，但是要实现公平锁必然要求系统维护一个有序队列，因此公平锁的实现成本比较高，性能相对也非常低下，因此，默认情况下，锁是非公平的。
+
+ReentrantLock的几个重要方法如下：
+
+*	lock()：获得锁，如果锁已经被占用，则等待。
+*	lockInterruptibly()：获得锁，但优先响应中断。
+*	tryLock()：尝试获得锁，如果成功，返回true，失败返回false。该方法不等待，立即返回。
+*	tryLock(long time, TimeUnit unit)：在给定时间内尝试获得锁。
+*	unlock()：释放锁。
+
+在重入锁的实现中，主要包含三个要素：
+
+*	第一，是原子状态。原子状态使用CAS操作来存储当前锁的状态，判断锁是否已经被别的线程持有。
+*	第二，是等待队列。
+*	第三，是阻塞原语park()和unpark()，用来挂起和恢复线程。没有得到锁的线程将会被挂起。
+
+### 3.1.2 重入锁的好搭档：Condition条件
+
+通过Lock接口（重入锁就实现了这一接口）的Condition newCondition()方法可以生成一个与当前重入锁绑定的Condition实例。利用Condition对象，我们就可以让线程在合适的时间等待，或者在某一个特定的时间得到通知，继续执行。
+
+### 3.1.3 允许多个线程同时访问：信号量（Semaphore）
+
+信号量为多线程协作提供了更为强大的控制方法。广义上说，信号量是对锁的扩展，无论是内部锁synchronized还是重入锁ReentrantLock，一次都只允许一个线程访问一个资源，而信号量却可以指定多个线程，同时访问某一个资源。信号量主要提供了以下构造函数：
+
+	public Semaphore(int permits)
+	public Semaphore(int permits, boolean fair)		// 第二个参数可以指定是否公平
+	
+信号量的主要逻辑方法有：
+
+*	acquire()方法尝试获得一个准入的许可，若无法获得，则线程会等待，直到有线程释放一个许可或者当前线程被中断。
+*	acquireUninterruptibly()方法和acquire()方法类似，但是不响应中断。
+*	tryAcquire()尝试获得一个许可，如果成功返回true，失败则返回false，它不会进行等待，立即返回。
+*	release()用于在线程访问资源结束后，释放一个许可，以使其他等待许可的线程可以进行资源访问。
+
+### 3.1.4 ReadWriteLock 读写锁
+
+读写分离锁可以有效地帮助减少锁竞争，以提升系统性能。
+
+*	读-读不互斥：读读之间不阻塞。
+*	读-写互斥：读阻塞写，写也会阻塞读。
+*	写-写互斥：写写阻塞。
+
+如果在系统中，读操作次数远远大于写操作，则读写锁就可以发挥最大的功效，提升系统的性能。
+
+### 3.1.5 倒计时器：CountDownLatch
+
+CountDownLatch是一个非常实用的多线程控制工具类。这个工具通常用来控制线程等待，它可以让某一个线程等待直到倒计时结束，再开始执行。
+
+![](/img/notes/java/highConcurrentProgramming/countdownlatch.png)
+
+主线程在CountDownLatch上等待，当所有检查任务全部完成后，主线程方能继续执行。
+
+### 3.1.6 循环栅栏：CyclicBarrier
+
+CyclicBarrier是另外一种多线程并发控制实用工具。和CountDownLatch非常类似，它也可以实现线程间的计数等待，但它的功能比CountDownLatch更加复杂且强大。
+
+CyclicBarrier计数器可以反复使用。
+
+比CountDownLatch略微强大一些，CyclicBarrier可以接收一个参数作为barrierAction。
+
+CyclicBarrier.await()方法可能会抛出两个异常：
+
+*	InterruptedException：在等待过程中，线程被中断，应该说这是一个非常通用的异常。
+*	BrokenBarrierException：这是CyclicBarrier特有的异常，一旦遇到这个异常，则表示当前的CyclicBarrier已经破损了，可能系统已经没有办法等待所有线程到齐了。
+
+### 3.1.7 线程阻塞工具类：LockSupport
+
+LockSupport是一个非常方便实用的线程阻塞工具，它可以在线程内任意位置让线程阻塞。和Thread.suspend()相比，它弥补了由于resume()在前发生，导致线程无法继续执行的情况。和Object.wait()相比，它不需要先获得某个对象的锁，也不会抛出InterruptedException异常。
+
+LockSupport的静态方法park()可以阻塞当前线程，类似的还有parkNanos()、parkUnit()等方法。它们实现了一个限时的等待。
+
+LockSupport类使用类似信号量的机制。它为每一个线程准备了一个许可，如果许可可用，那么park()函数会立即返回，并且消费这个许可（也就是将许可变为不可用），如果许可不可用，就会阻塞。而unpack()则使得一个许可变为可用（但是和信号量不同是，许可不能累加，你不可能拥有超过一个许可，它永远只有一个）。
+
+这个特点使得，即使unpark()操作发生在park()之前，它也可以使下一次的park()操作立即返回。
+
+处于park()挂起状态的线程不会像suspend()那样还给出一个令人费解的Runnable的状态。它会非常明确地给出一个WAITING状态，甚至还会标注是park()引起的。
+
+如果你使用park(Object)函数，还可以为当前线程设置一个阻塞对象，这个阻塞对象会出现在线程Dump中。
+
+除了有定时阻塞的功能外，LockSupport.park()还能支持中断影响。但是和其他接收中断的函数很不一样，LockSupport.park()不会抛出InterruptedException异常。它只会默默的返回。但是我们可以从Thread.interrupted()等方法获得中断标记。
+
+## 3.2 线程复用：线程池
+
+若不加控制和管理的随意使用线程，对系统的性能反而会产生不利的影响。
+
+在实际生产环境中，线程的数量必须得到控制。盲目的大量创建线程对系统性能是有伤害的。
+
+### 3.2.1 什么是线程池
+
+### 3.2.2 不要重复发明轮子：JKD对线程池的支持
+
+Executor框架提供了各种类型的线程池：
+
+*	newFixedThreadPool()方法：该方法返回一个固定线程数量的线程池。
+*	newSingleThreadExecutor()方法：该方法返回一个只有一个线程的线程池。
+*	newCachedThreadPool()方法：该方法返回一个可根据实际情况调整线程数量的线程池。
+*	newSingleThreadScheduledExecutor()方法：该方法返回一个scheduledExecutorService对象，线程池大小为1。ScheduledExecutorService接口在ExecutorService接口之上扩展了在给定时间执行某任务的功能，如在某个固定的延时之后执行，或者周期性执行某个任务。
+*	newScheduledThreadPool()方法：该方法也返回一个ScheduledExecutorService对象，但该线程池可以指定线程数量。
+
+### 3.2.3 刨根究底：核心线程池的内部实现
+
+线程池的实现都是ThreadPoolExecutor类的封装
+
+ThreadPoolExecutor最重要构造函数的参数含义：
+
+*	corePoolSize：指定了线程池中的线程数量
+*	maximumPoolSize：指定了线程池中的最大线程数量
+*	keepAliveTime：当线程池数量超过corePoolSize时，多余的空闲线程的存活时间。即，超过corePoolSize的空闲线程，在多长时间内，会被销毁。
+*	unit：keepAliveTime的单位。
+*	workQueue：任务队列，被提交但尚未被执行的任务。
+*	threadFactory：线程工厂，用于创建线程，一般用默认的即可。
+*	handler：拒绝策略。当任务太多来不及处理，如何拒绝任务。
+
+对于newCachedThreadPool()，如果同时有大量任务被提交，而任务的执行又不那么快时，那么系统便会开启等量的线程处理，这样做法可能会很快耗尽系统的资源。
+
+**注意**：使用自定义线程池时，要根据应用的具体情况，选择合适的并发队列作为任务的缓冲。当线程资源紧张时，不同的并发队列对系统行为和性能的影响均不同。
+
+### 3.2.4 超负载了怎么办：拒绝策略
+
+JDK内置的拒绝策略：
+
+*	AbortPolicy策略：该策略会直接抛出异常，阻止系统正常工作。
+*	CallerRunsPolicy策略：只要线程池未关闭，该策略直接在调用者线程中，运行当前被丢弃的任务。显然这样做不会真的丢弃任务，但是，任务提交线程的性能极有可能会急剧下降。
+*	DiscardOledestPolicy策略：该策略将丢弃最老的一个请求，也就是即将被执行的一个任务，并尝试再次提交当前任务。
+*	DiscardPolicy策略：该策略默默地丢弃无法处理的任务，不予任务处理。
+
+自己扩展RejectedExecutionHandler接口：
+
+	publi interface RejectedExecutionHandler {
+		void rejectedExecution(Runnable r, ThreadPoolExecutor executor);
+	}
+	
+其中r为请求执行的任务，executor为当前的线程池。
+
+### 3.2.5 自定义线程创建：ThreadFactory
+
+ThreadFactory是一个接口，它只有一个方法，用来创建线程：
+
+	Thread newThread(Runnable r);
+	
+### 3.2.6 我的应用我做主：扩展线程池
+
+ThreadPoolExecutor是一个可以扩展的线程池。它提供了beforeExecute()、afterExecute()和terminated()三个接口对线程池进行控制。
+
+### 3.2.7 合理的选择：优化线程池线程数量
+
+为保持处理器达到期望的使用率，最优的池的大小等于：
+
+**Nthreads = Ncpu * Ucpu * (1 + W/C)**
+
+*	Ncpu = CPU的数量
+*	Ucpu = 目标CPU的使用率，[0, 1]之间
+*	W/C = 等待时间与计算时间的比率
+
+在Java中，可以通过：
+	
+	Runtime.getRuntime().availableProcessors()
+	
+取得可用的CPU数量。
+
+### 3.2.8 堆栈去哪里了：在线程池中寻找堆栈
+
+放弃submit，改用execute()：
+
+	pools.execute(new DivTask(100, i));
+	
+或者使用下面的方法改造submit()：
+
+	Future re = pools.submit(new DivTask(100, i));
+	re.get();
+	
+上面两种方法都可以得到部分堆栈信息。
+
+最终解决方案：自定义扩展ThreadPoolExecutor线程池，让它在调度任务之前，先保存一下提交任务线程的堆栈信息。
+
+	public class TraceThreadPoolExecutor extends ThreadPoolExecutor {
+		public TraceThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue) {
+			super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);
+		}
+		
+		@Override
+		public void execute(Runnable task) {
+			super.execute(wrap(task, clientTrace(), Thread.currentThread().getName()));
+		}
+		
+		@Override
+		public Future<?> submit(Runnable task) {
+			return super.submit(wrap(task, clientTrace(), Thread.currentThread().getName()));
+		}
+		
+		private Exception clientTrace() {
+			return new Exception("Client stack trace");
+		}
+		
+		private Runnable wrap(final Runnable task, final Exception clientStack, String currentThreadName) {
+			return new Runnable() {
+				@Override
+				public void run() {
+					try {
+						task.run();
+					} catch (Exception e) {
+						clientStack.printStackTrace();
+						throw e;
+					}
+				}
+			}
+		}
+	}
+	
+### 3.2.9 分而治之：Fork/Join框架
+
+![](/img/notes/java/highConcurrentProgramming/fork_join_logic.jpg)
