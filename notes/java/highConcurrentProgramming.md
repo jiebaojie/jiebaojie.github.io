@@ -731,3 +731,73 @@ ThreadPoolExecutor是一个可以扩展的线程池。它提供了beforeExecute(
 ### 3.2.9 分而治之：Fork/Join框架
 
 ![](/img/notes/java/highConcurrentProgramming/fork_join_logic.jpg)
+
+ForkJoinPool的一个重要的接口：
+
+	public <T> ForkJoinTak<T> submit(ForkJoinTask<T> task)
+	
+你可以向ForkJoinPool线程池提交一个ForkJoinTask任务。所谓ForkJoinTask任务就是支持fork()分解以及join()等待的任务。ForkJoinTask有两个重要的子类，RecursiveAction和RecursiveTask。它们分别表示没有返回值的任务和可以携带返回值的任务。
+
+	public class CountTask extends RecursiveTask<Long> {
+		private static final int THRESHOLD = 10000;
+		private long start;
+		private long end;
+		
+		public CountTask(long start, long end) {
+			this.start = start;
+			this.end = end;
+		}
+		
+		public Long compute() {
+			long sum = 0;
+			boolean canCompute = (end - start) < THRESHOLD;
+			if (canCompute) {
+				for (long i = start; i <= end; i++) {
+					sum += i;
+				}
+			} else {
+				// 分成100个小任务
+				long step = (start + end) / 100;
+				ArrayList<CountTask> subTasks = new ArrayList<CountTask>();
+				long pos = start;
+				for (int i = 0; i < 100; i ++) {
+					long lastOne = pos + step;
+					if (lastOne > end) {
+						lastOne = end;
+					}
+					CountTask subTask = new CountTask(pos, lastOne);
+					pos += step + 1;
+					subTasks.add(subTask);
+					subTask.fork();
+				}
+				
+				for (CountTask t : subTasks) {
+					sum += t.join();
+				}
+			}
+			return sum;
+		}
+		
+		public static void main(String[] args) {
+			ForkJoinPool forkJoinPool = new ForkJoinPool();
+			CountTask task = new CountTask(0, 200000L);
+			ForkJoinTask<Long> result = forkJoinPool.submit(task);
+			try {
+				long res = result.get();
+				System.out.println("sum=" + res);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			} catch (ExecutionException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+	
+在使用ForkJoin时需要注意，如果任务的划分层次很深，一直得不到返回，那么可能出现两种情况：
+
+*	第一，系统内的线程数量越积越多，导致性能严重下降。
+*	第二，函数的调用层次变得很深，最终导致栈溢出。
+
+ForkJoin线程池使用一个无锁的栈来管理空闲线程。如果一个工作线程暂时取不到可用的任务，则可能会被挂起，挂起的线程将会被压入由线程池维护的栈中。待将来有任务可用时，再从栈中唤醒这些线程。
+
+## 3.3 不要重复发明轮子：JDK的并发容器
