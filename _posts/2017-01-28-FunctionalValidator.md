@@ -134,7 +134,21 @@ ValidationResult数据结构定义如下：
 		
 HibernateSupportedValidator依赖于javax.validation.Validator的实现，build()方法使用了Hibernate Validator官方提供的初始化javax.validation.Validator实现的方法，也可以自己提供validator：
 
-	HibernateSupportedValidator.buildByValidator(myValidator).build();
+	HibernateSupportedValidator.buildByValidator(myValidator).validator();
+	
+可以自定义从ConstraintViolation到ValidationError的转换器（如不指定，默认会提供如下的转换器）：
+
+	HibernateSupportedValidator.build()
+		.transformer(v -> ValidationError.of(v.getMessage())
+            .field(v.getPropertyPath().toString())
+            .invalidValue(v.getInvalidValue()))
+		.validator();
+		
+也可以自定义Hibernate Validator校验出错时的错误码（默认为0）：
+
+	HibernateSupportedValidator.build()
+		.errorCode(234)
+		.validator();
 	
 functional-validator对Hibernate Validator的集成主要依靠HibernateSupportedValidator类，整个类的实现都是基于函数式的，非常优雅、简洁，读者可通过阅读源码来体会下functional-validator通过函数来实现校验器的精妙之处。
 
