@@ -13,7 +13,7 @@ tags:
 
 # 1 背景
 
-functional-validator是具有函数式风格的业务逻辑验证框架，它的创作灵感来自于[fluent-validator](https://github.com/neoremind/fluent-validator)，大家在阅读本文时可以先简单浏览下fluent-validator的[中文手册](http://neoremind.com/2016/02/java%E7%9A%84%E4%B8%9A%E5%8A%A1%E9%80%BB%E8%BE%91%E9%AA%8C%E8%AF%81%E6%A1%86%E6%9E%B6fluent-validator/)。
+functional-validator是具有函数式风格的业务逻辑验证框架，它的创作灵感来自于[fluent-validator](https://github.com/neoremind/fluent-validator)，大家在阅读本文前可以先简单浏览下fluent-validator的[中文手册](http://neoremind.com/2016/02/java%E7%9A%84%E4%B8%9A%E5%8A%A1%E9%80%BB%E8%BE%91%E9%AA%8C%E8%AF%81%E6%A1%86%E6%9E%B6fluent-validator/)。
 
 首先看一个fluent-validator的例子：
 
