@@ -914,3 +914,47 @@ Git 处理分支的方式可谓是难以置信的轻量，创建新分支这一�
 Git 保存的不是文件的变化或者差异，而是一系列不同时刻的文件快照。
 
 在进行提交操作时，Git 会保存一个提交对象（commit object）。知道了 Git 保存数据的方式，我们可以很自然的想到——该提交对象会包含一个指向暂存内容快照的指针。 但不仅仅是这样，该提交对象还包含了作者的姓名和邮箱、提交时输入的信息以及指向它的父对象的指针。首次提交产生的提交对象没有父对象，普通提交操作产生的提交对象有一个父对象，而由多个分支合并产生的提交对象有多个父对象。
+
+假设现在有一个工作目录，里面包含了三个将要被暂存和提交的文件。 暂存操作会为每一个文件计算校验和，然后会把当前版本的文件快照保存到 Git 仓库中（Git 使用 blob 对象来保存它们），最终将校验和加入到暂存区域等待提交：
+
+	$ git add README test.rb LICENSE
+	$ git commit -m 'initial commit of my project'
+	
+当使用 git commit 进行提交操作时，Git 会先计算每一个子目录（本例中只有项目根目录）的校验和，然后在 Git 仓库中这些校验和保存为树对象。 随后，Git 便会创建一个提交对象，它除了包含上面提到的那些信息外，还包含指向这个树对象（项目根目录）的指针。如此一来，Git 就可以在需要的时候重现此次保存的快照。
+
+现在，Git 仓库中有五个对象：三个 blob 对象（保存着文件快照）、一个树对象（记录着目录结构和 blob 对象索引）以及一个提交对象（包含着指向前述树对象的指针和所有提交信息）。
+
+![](/img/notes/vcs/proGit/commit_and_tree.png)
+
+做些修改后再次提交，那么这次产生的提交对象会包含一个指向上次提交对象（父对象）的指针。
+
+![](/img/notes/vcs/proGit/commits_and_parents.png)
+
+Git 的分支，其实本质上仅仅是指向提交对象的可变指针。 Git 的默认分支名字是 master。 在多次提交操作之后，你其实已经有一个指向最后那个提交对象的 master 分支。 它会在每次的提交操作中自动向前移动。
+
+Git 的 “master” 分支并不是一个特殊分支。 它就跟其它分支完全没有区别。 之所以几乎每一个仓库都有 master 分支，是因为 git init 命令默认创建它，并且大多数人都懒得去改动它。
+
+![](/img/notes/vcs/proGit/branch_and_history.png)
+
+### 分支创建
+
+Git 是怎么创建新分支的呢？ 很简单，它只是为你创建了一个可以移动的新的指针。 比如，创建一个 testing 分支， 你需要使用 git branch 命令：
+
+	$ git branch testing
+	
+这会在当前所在的提交对象上创建一个指针。
+
+![](/img/notes/vcs/proGit/two_branches.png)
+
+那么，Git 又是怎么知道当前在哪一个分支上呢？ 也很简单，它有一个名为 HEAD 的特殊指针。 在 Git 中，它是一个指针，指向当前所在的本地分支。在本例中，你仍然在 master 分支上。 因为 git branch 命令仅仅 创建 一个新分支，并不会自动切换到新分支中去。
+
+![](/img/notes/vcs/proGit/head_to_master.png)
+
+你可以简单地使用 git log 命令查看各个分支当前所指的对象。 提供这一功能的参数是 --decorate。
+
+	$ git log --oneline --decorate
+	f30ab (HEAD, master, testing) add feature #32 - ability to add new
+	34ac2 fixed bug #1328 - stack overflow under certain conditions
+	98ca9 initial commit of my project
+	
+正如你所见，当前 “master” 和 “testing” 分支均指向校验和以 f30ab 开头的提交对象。
