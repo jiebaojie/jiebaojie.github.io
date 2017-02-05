@@ -802,3 +802,767 @@ ForkJoin线程池使用一个无锁的栈来管理空闲线程。如果一个工
 
 ## 3.3 不要重复发明轮子：JDK的并发容器
 
+### 3.3.1 超好用的工具类：并发集合简介
+
+这些容器大部分在java.util.concurrent包中
+
+*   ConcurrentHashMap：高效的、线程安全的HashMap
+*   CopyOnWriteArrayList：和ArrayList一族，在读多写少的场合，这个List的性能非常好，远远好于Vector。
+*   ConcurrentLinkedQueue：高效的并发队列，使用链表实现。可以看做是一个线程安全的LinkedList。
+*   BlockingQueue：这是一个接口，JDK内部通过链表、数组等方式实现了这个接口。表示阻塞队列，非常适合用于作为数据共享的通道。
+*   ConcurrentSkipListMap：跳表的实现。这是一个Map，使用跳表的数据结构进行快速查找。
+
+除了以上并发包中的专有数据结构外，java.util下的Vecotor是线程安全的（虽然性能和上述专用工具没得比），另外Collections工具类可以帮助我们将任意集合包装成线程安全的集合。
+
+### 3.3.2 线程安全的HashMap
+
+一种可行的方法是使用Collections.synchronizedMap()方法包装我们的HashMap。如下代码，产生的HashMap就是线程安全的：
+
+    public static Map m = Collections.synchronizedMap(new HashMap());
+
+Collections.synchronizedMap()会生成一个名为SynchronizedMap的Map。它使用委托，将自己所有Map相关的功能交给传入的HashMap实现，而自己则主要负责保证线程安全。这个包装的Map可以满足线程安全的要求，但是，它在多线程环境中的性能表现并不算太好。
+
+一个更加专业的并发HashMap是ConcurrentHashMap。它位于java.util.concurrent包内。它专门为并发进行了性能优化，因此，更加适合多线程的场合。
+
+### 3.3.3 有关List的线程安全
+
+    public static List<String> l = Collctions.synchronizedList(new LinkedList<String>());
+
+### 3.3.4 高效读写的队列：深度剖析ConcurrentLinkedQueue
+
+节点Node核心：
+
+    private static class Node<E> {
+        volatile E item;
+        volatile Node<E> next;
+    }
+
+![](/img/notes/java/highConcurrentProgramming/concurrent_linked_queue_structure.jpg)
+
+对Node进行操作时，使用了CAS操作。
+
+    boolean casItem(E cmp, E val) {
+        return UNSAFE.compareAndSwap(this, itemOffset, cmp, val);
+    }
+
+    boolean lazySetNext(Node<E> val) {
+        UNSAFE.putOrderedObject(this, nextOffset, val);
+    }
+
+    boolean casNext(Node<E> cmp, Node<E> val) {
+        return UNSAFE.cmpareAndSwapObject(this, nextOffset, cmp, val);
+    }
+
+方法casItem()表示设置当前Node的item值。它需要两个参数，第一个参数为期望值，第二个参数为设置目标值。当当前值等于cmp期望值时，就会将目标设置为val。同样casNext方法也是类似的，但是它是用来设置next字段，而不是item字段。
+
+ConcurrentLinkedQueue的内部实现非常复杂，它允许在运行时链表处于多个不同的状态。如tail的更新并不是及时的。
+
+不使用锁而单纯地使用CAS操作会要求在应用层面保证线程安全，并处理一些可能存在的不一致问题，大大增加了程序设计和实现的难度。但是它带来的好处就是可以得到性能的飞速提升。
+
+### 3.3.5 高效读取：不变模式下的CopyOnWriteArrayList
+
+所谓CopyOnWrite就是在写入操作时，进行一次自我复制。
+
+### 3.3.6 数据共享通道：BlockingQueue
+
+BlockingQueue是一个接口，并非一个具体的实现，主要实现有：ArrayBlockingQueue和LinkedBlockingQueue。
+
+BlockingQueue很好地解决了这个问题，它会让服务线程在队列为空时，进行等待，当有新的消息进入队列后，自动将线程唤醒。
+
+### 3.3.7 随机数据结构：跳表（SkipList）
+
+跳表是一种可以用来快速查找的数据结构，有点类似于平衡树。
+
+重要区别：对平衡树的插入和删除往往很可能导致平衡树进行一次全局的调整，而对跳表的插入和删除只需要对整个数据结构的局部进行操作即可。
+
+好处：在高并发情况下，你会需要一个全局锁来保证整个平衡树的线程安全。而对于跳表，你只需要部分锁即可。这样，在高并发环境下，你就可以拥有更好的性能。
+
+跳表是一种使用空间换时间的算法。
+
+使用跳表实现Map和使用哈希算法实现Map的另外一个不同之处是：哈希并不会保存元素的顺序，而跳表内所有的元素都是排序的。因此在对跳表进行遍历时，你会得到一个有序的结果。
+
+Node数据结构：
+
+    static final class Node<K, V> {
+        final K key;
+        volatile Object value;
+        volatile Node<K, V> next;
+    }
+
+对Node的所有操作，使用的CAS方法：
+
+    boolean casValue(Object cmp, Object val) {
+        return UNSAFE.compareAndSwapObject(this, valueOffset, cmp, val);
+    }
+
+    boolean canNext(Node<K, V> cmp, Node<K, V> val) {
+        return UNSAFE.compareAndSwapObject(this, nextOffset, cmp, val);
+    }
+
+Index：索引。它内部包装了Node，同时增加了向下的引用和向右的引用。
+
+    static class Index<K, V> {
+        final Node<K, V> node;
+        final Index<K, V> down;
+        volatile Index<K, V> right;
+    }
+
+整个跳表就是根据Index进行全网的组织的。
+
+此外，对于每一层的表头，还需要记录当前处于哪一层。为此，还需要一个称为HeadIndex的数据结构，表示链表头部的第一个Index。它继承自Index。
+
+    static final class HeadIndex<K, V> extends Index<K, V> {
+        final int level;
+        HeadIndex(Node<K, V> node, Index<K, V> down, Index<K, V> right, int level) {
+            super(node, down, right);
+            this.level = level;
+        }
+    }
+
+## 3.4 参考资料
+
+# 4. 锁的优化及注意事项
+
+## 4.1 有助于提高“锁”性能的几点建议
+
+“锁”的竞争必然会导致程序的整体性能下降。
+
+### 4.1.1 减小锁持有时间
+
+减少锁的持有时间有助于降低锁冲突的可能性，进而提升系统的并发能力。
+
+### 4.1.2 减小锁粒度
+
+所谓减少锁粒度，就是指减小锁定对象的范围，从而减少锁冲突的可能性，进而提高系统的并发能力。
+
+对于ConcurrentHashMap，它内部进一步细分了若干个小的HashMap，称之为段（SEGMENT）。默认情况下，一个ConcurrentHashMap被进一步细分为16个段。
+
+如果需要在ConcurrentHashMap中增加一个新的表项，并不是将整个HashMap加锁，而是首先根据hashcode得到该表项应该被存放到哪个段中，然后对该段加锁，并完成put()操作。
+
+但是，减少锁粒度会引入一个新的问题，即：当系统需要取得全局锁时，其消耗的资源会比较多。比如试图访问ConcurrentHashMap全局信息时（如size()方法），就会需要同时取得所有段的锁方能顺利实施。
+
+因此，只有类似于size()获取全局信息的方法调用并不频繁时，这种减小锁粒度的方法才能真正意义上提高系统吞吐量。
+
+### 4.1.3 读写分离锁来替换独占锁
+
+在读多写少的场合，使用读写锁可以有效提升系统的并发能力。
+
+### 4.1.4 锁分离
+
+如果将读写锁的思想做进一步的延伸，就是锁分离。依据应用程序的功能特点，使用类似的分离思想，也可以对独占锁进行分离。
+
+通过takeLock和putLock两把锁，LinkedBlockingQueue实现了取数据和写数据的分离，使两者在真正意义上成为可并发的操作。
+
+### 4.1.5 锁粗化
+
+虚拟机在遇到一连串连续地对同一锁不断进行请求和释放的操作时，便会把所有的锁操作整合成对锁的一次请求，从而减少对锁的请求同步次数，这个操作叫做锁的粗化。
+
+在开发过程中，也应该有意识地在合理的场合进行锁的粗化。如：
+
+    for (int i = 0; i < CIRCLE; i++) {
+        synchronized(lock) {
+
+        }
+    }
+
+应粗化为：
+
+    synchronized(lock) {
+        for (int i = 0; i < CIRCLE; i++) {
+
+        }
+    }
+
+性能优化就是根据运行时的真实情况对各个资源点进行权衡折中的过程。锁粗化的思想和减少锁持有时间是相反的，但在不同的场合，它们的效果并不相同。所以大家需要根据实际情况，进行权衡。
+
+## 4.2 Java虚拟机对锁优化所做的努力
+
+### 4.2.1 锁偏向
+
+核心思想：如果一个线程获得了锁，那么锁就进入了偏向模式。当这个线程再次请求锁时，无须再做任何同步操作。这样就节省了大量有关锁申请的操作，从而提高了程序性能。因此，对于几乎没有锁竞争的场合，偏向锁有比较好的优化效果，因为连续多次极有可能是同一个线程请求相同的锁。使用Java虚拟机参数-XX+UseBiasedLocking可以开启偏向锁。
+
+### 4.2.2 轻量级锁
+
+如果偏向锁失效，虚拟机并不会立即挂起线程，它还会使用一种称为轻量级锁的优化手段。轻量级锁的操作也很轻便，它只是简单地将对象头部作为指针，指向持有锁的线程堆栈的内部，来判断一个线程是否持有对象锁。如果线程获得轻量级锁成功，则可以顺利进入临界区。如果轻量级锁加锁失败，则表示其他线程抢先争夺到了锁，那么当前线程的锁请求就会膨胀为重量级锁。
+
+### 4.2.3 自旋锁
+
+锁膨胀后，虚拟机为了避免线程真实地在操作系统层面挂起，虚拟机还会在做最后的努力——自旋锁。它会假设在不久的将来，线程可以得到这把锁。因此虚拟机会让当前线程做几个空循环，在经过若干次循环后，如果可以得到锁，那么久顺利进入临界区。如果还不能获得锁，才会真实地将线程在操作系统层面挂起。
+
+### 4.2.4 锁消除
+
+锁消除是一种更彻底的锁优化。Java虚拟机在JIT编译时，通过对运行上下文的扫描，去除不可能存在共享资源竞争的锁。通过锁消除，可以节省毫无意义的请求锁时间。
+
+    public String[] createStrings() {
+        Vector<String> v = new Vector<String>();
+        for (int i = 0; i < 100; i++) {
+            v.add(Integer.toString(i));
+        }
+        return v.toString(new String[]());
+    }
+
+锁消除涉及的一项关键技术为逃逸分析，所谓逃逸分析就是观察某一个变量是否会逃出某一个作用域。在本例中，变量v显然没有逃出createStrings()函数之外。以此为基础，虚拟机才可以大胆地将v内部的加锁操作去除。
+
+逃逸分析必须在-server模式下进行，可以使用-XX:+DoEscapeAnalysis参数打开逃逸分析，使用-XX:+EliminateLocks参数可以打开锁消除。
+
+## 4.3 人手一支笔：ThreadLocal
+
+### 4.3.1 ThreadLocal的简单使用
+
+    static ThreadLocal<SimpleDateFormat> t1 = new ThreadLocal<SimpleDateFormat>();
+    public static class ParseDate implements Runnable {
+        int i = 0;
+        public ParseDate(int i) {
+            this.i = i;
+        }
+
+        public void run() {
+            try {
+                if (t1.get() == null) {
+                    t1.set(new SimpleDateFormat("yyyy-MM-dd HH:mm:SS"));
+                }
+                Date t = t1.get.parse("2015-03-29 19:29:" + i % 60);
+                System.out.println(i + ":" + t);
+            } catch (ParseException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    为每一个线程分配不同的对象，需要在应用层面保证。ThreadLocal只是起到了简单的容器作用。
+
+### 4.3.2 ThreadLocal的实现原理
+
+    public void set(T value) {
+        Thread t = Thread.currentThread();
+        ThreadLocalMap map = getMap(t);
+        if (map != null) {
+            map.set(this, value);
+        } else {
+            createMap(t, value);
+        }
+    }
+
+    public T get() {
+        Thread t = Thread.currentThread();
+        ThreadLocalMap map = getMap(t);
+        if (map != null) {
+            ThreadLocalMap.Entry e = map.getEntry(this);
+            if (e != null) {
+                return (T) e.value;
+            }
+        }
+        return setInitialValue();
+    }
+
+当线程退出时，Thread类会进行一些清理工作，其中就包括清理ThreadLocalMap。
+
+如果我们使用线程池，那就意味着当前线程未必会退出（比如固定大小的线程池，线程总是存在）。如果这样，将一些大大的对象设置到ThreadLocal中（它实际保存在线程持有的threadLocal Map内），可能会使系统出现内存泄露的可能（设置了对象到ThreadLocal中，但不清理它，在你使用几次后，这个对象也不再有用了，但是它却无法被回收）.
+
+如果希望及时回收对象，最好使用ThreadLocal.remove()方法将这个变量移除。
+
+如果对于ThreadLocal的变量，我们手动将其设置为null，那么这个ThreadLocal对应的所有线程的局部变量都有可能被回收。
+
+ThreadLocalMap类似WeakHashMap，它的实现使用了弱引用。弱引用是比强引用弱的多的引用。Java虚拟机在垃圾回收时，如果发现弱引用，就会立即回收。ThreadLocalMap内部由一系列Entry构成，每个Entry都是WeakReference<ThreadLocal>。
+
+    static class Entry extends WeakReference<ThreadLocal> {
+        Object value;
+        Entry(ThreadLocal k, Object v) {
+            super(k);
+            value = v ;
+        }
+    }
+
+当ThreadLocal的外部引用被回收时，ThreadLocalMap中的key就会变为null。当系统进行ThreadLocalMap清理时，就会自然将这些垃圾数据回收。
+
+### 4.3.3 对性能有何帮助
+
+如果共享对象对于竞争的处理容易引起性能损失，我们还是应该考虑使用ThreadLocal为每个线程分配单独的对象。如多线程下产生随机数。
+
+## 4.4 无锁
+
+对于并发控制而言，锁是一种悲观的策略，它总是假设每一次的临界区操作会产生冲突。而无锁是一种乐观的策略，它会假设对资源的访问时没有冲突的，一旦遇到冲突，无锁的策略使用一种叫做比较交换的技术（CAS Compare And Swap）来鉴别线程冲突，一旦检测到冲突产生，就重试当前操作直到没有冲突为止。
+
+### 4.4.1 与众不同的并发策略：比较交换（CAS）
+
+CAS算法的过程是这样：它包含三个参数CAS(V, E, N)。V表示要更新的变量，E表示预期值，N表示新值。仅当V值等于E值时，才会将V的值设为N，如果V值和E值不同，则说明已经有其他线程做了更新，则当前线程什么都不做。
+
+在硬件层面，大部分的现代处理器都已经支持原子化的CAS指令。在JDK 5.0以后，虚拟机便可以使用这个指令来实现并发操作和并发数据结构，并且，这种操作在虚拟机中可以说是无处不在。
+
+### 4.4.2 无锁的线程安全整数：AtomicInteger
+
+与Integer不同，AtomicInteger是可变的，并且是线程安全的。对其进行修改等任何操作，都是用CAS指令进行的。
+
+就内部实现上说，AtomicInteger中保存一个核心字段：
+
+    private volatile int value;
+
+它就代表了AtomicInteger的当前实际值。此外还有一个：
+
+    private static final long valueOffset;
+
+它保存着value字段在AtomicInteger对象中的偏移量。
+
+    public final int incrementAndGet() {
+        for (;;) {
+            int current = get();
+            int next = current + 1;
+            if (compareAndSet(current, next)) {
+                return next;
+            }
+        }
+    }
+
+其中get()方法非常简单：
+
+    public final int get() {
+        return value;
+    }
+
+和AtomicInteger类似的类还有AtomicLong用来代表long型，AtomicBoolean表示boolean型，AtomicReference表示对象引用。
+
+### 4.4.3 Java中的指针：Unsafe类
+
+    public final boolean compareAndSet(int expect, int update) {
+        return unsafe.compareAndSwapInt(this, valueOffset, expect, update);
+    }
+
+变量unsafe是sun.misc.Unsafe类型。这里的Unsafe就是封装了一些类似指针的操作。compareAndSwapInt()方法是一个native方法，它的几个参数含义如下：
+
+    public final native boolean compareAndSwapInt(Object o, long offset, int expected, int x);
+
+第一个参数o为给定的对象，offset为对象内的偏移量，expected表示期望值，x表示要设置的值。如果指定的字段的值等于expected，那么就会把它设置为x。
+
+compareAndSwapInt()方法的内部，必然是使用CAS原子指令来完成的。
+
+JDK的开发人员并不希望大家使用Unsafe这个类：
+
+    public static Unsafe getUnsafe() {
+        Class cc = Reflection.getCallerClass();
+        if (cc.getClassLoader() != null) {
+            throw new SecurityException("Unsafe");
+        }
+        return theUnsafe;
+    }
+
+根据Java类加载器的工作原理，应用程序的类由AppLoader加载。而系统核心类，如rt.jar中的类由Bootstrap类加载器加载。Bootstrap加载器没有Java对象的对象，因此试图获得这个类加载器会返回null。所以，当一个类的类加载器为null时，说明它是由Bootstrap加载的，而这个类也极有可能是rt.jar中的类。
+
+### 4.4.4 无锁的对象引用：AtomicReference
+
+AtomicReference对应普通对象的引用，它可以保证你在修改对象引用时的线程安全性。
+
+    static AtomicReference<Integer> money = new AtomicReference<Integer>();
+
+不足：当你获得对象当前的数据后，在准备修改为新值前，对象的值被其他线程连续修改了两次，而经过这两次修改后，对象的值又恢复为旧值。这样，当前线程就无法正确判断这个对象究竟是否被修改过。
+
+JDK已经为我们考虑到了这种情况，使用AtomicStampedReference就可以很好地解决这个问题。
+
+### 4.4.5 带有时间戳的对象引用：AtomicStampedReference
+
+只要能够记录对象在修改过程中的状态值，就可以很好地解决对象被反复修改导致线程无法正确判断对象状态的问题。
+
+AtomicStampedReference内部不仅维护了对象值，还维护了一个时间戳。
+
+### 4.4.6 数组也能无锁：AtomicIntegerArray
+
+当前可用的原子数组有；AtomicIntegerArray、AtomicLongArray和AtomicReferenceArray，分别表示整数数组、long型数组和普通的对象数组。
+
+AtomicIntegerArray本质上是对int[]类型的封装，使用Unsafe类通过CAS的方式控制int[]在多线程下的安全性。
+
+    public class AtomicIntegerArrayDemo {
+        static AtomicIntegerArray arr = new AtomicIntegerArray[10];
+        public static AddThread implements Runnable {
+            public void run() {
+                for (int k = 0; k < 10000; k++) {
+                    arr.getAndIncrement(k % arr.length);
+                }
+            }
+        }
+        public static void main(String[] args) throws InterruptedException {
+            Thread[] ts = new Thread[10];
+            for (int k = 0; k < 10; k++) {
+                ts[k] = new Thread(new AddThread());
+            }
+            for (int k = 0; k < 10; k++) {
+                ts[k].start();
+            }
+            for (int k = 0; k < 10; k++) {
+                ts[k].join();
+            }
+            System.out.println(arr);
+        }
+    }
+
+### 4.4.7 让普通变量也享受原子操作：AtomicIntegerFieldUpdater
+
+AtomicIntegerFieldUpdater可以让你在不改动（或者极少改动）原有代码的基础上，让普通的变量也享受CAS操作带来的线程安全性，这样你可以修改极少的代码，来获得线程安全的保证。
+
+根据数据类型不同，这个Updater有三种，分别是AtomicIntegerFieldUpdater、AtomicLongFieldUpdater和AtomicReferenceFieldUpdater。它们分别可以对int、long和普通对象进行CAS修改。
+
+    public class AtomicIntegerFieldUpdaterDemo {
+        public static class Candidate {
+            int id;
+            volatile int score;
+        }
+
+        public final static AtomicIntegerFieldUpdater<Candidate> scoreUpdater = AtomicIntegerFieldUpdater.newUpdater(Candidate.class, "score");
+
+        // 检查Updater是否工作正确
+        public static AtomicInteger allScore = new AtomicInteger(0);
+        public static void main(String[] args) throws InterruptedException {
+            final Candidate stu = new Candidate();
+            Thread[] t = new Thread[10000];
+            for (int i = 0; i < 10000; i++) {
+                t[i] = new Thread() {
+                    public void run() {
+                        if (Math.random() > 0.4) {
+                            scoreUpdater.incrementAndGet(stu);
+                            allScore.incrementAndGet();
+                        }
+                    }
+                };
+                t[i].start();
+            }
+            for (int i = 0; i < 10000; i++) {
+                t[i].join();
+            }
+            System.out.println("score=" + stu.score);
+            System.out.println("allScore=" + allScore);
+        }
+    }
+
+虽然AtomicIntegerFieldUpdater最好用，但是还是有几个注意事项：
+
+*   第一，Updater只能修改它可见范围内的变量。因为Updater使用反射得到这个变量。如果变量不可见，就会出错。比如如果score申明为private，就是不可行的。
+*   第二，为了确保变量被正确的读取，它必须是volatile类型的。
+*   第三，由于CAS操作会通过对象实例中的偏移量进行赋值，因此，它不支持static字段（Unsafe.objectFieldOffset()不支持静态变量）。
+
+### 4.4.8 挑战无锁算法：无锁的Vector实现
+
+无锁的好处：
+
+*   第一，在高并发的情况下，它比有锁的程序拥有更好的性能。
+*   第二，它天生就是死锁免疫的。
+
+就凭借这两个优势，就值得我们冒险尝试使用无锁的并发。
+
+无锁的Vector来自于amino并发包。
+
+### 4.4.9 让线程之间互相帮助：细看SynchronousQueue的实现
+
+SynchronousQueue的容量为0，任何一个对SynchronousQueue的写需要等待一个对SynchronousQueue的读，反之亦然。SynchronousQueue与其说是一个队列，不如说是一个数据交换通道。
+
+对SynchronousQueue来说，它将put()和take()两个功能截然不同的操作抽象为一个共通的方法Transformer.transfer()。
+
+    Object transfer(Object e, boolean timed, long nanos);
+
+当参数e为非空时，表示当前操作传递给一个消费者，如果为空，则表示当前操作需要请求一个数据。timed参数决定是否存在timeout时间，nanos决定了timeout的时长。如果返回值非空，则表示数据已经接受或者正常提供，如果为空，则表示失败（超时或者中断）。
+
+SynchronousQueue内部会维护一个线程等待队列。等待队列中会保存等待线程以及相关数据的信息。比如，生产者将数据放入SynchronousQueue时，如果没有消费者接收，那么数据本身和线程对象都会打包在队列中等待。
+
+Transferer.transfer()函数的实现是SynchronousQueue的核心，它大体上分为三个步骤：
+
+1.  如果等待队列为空，或者队列中节点的类型和本次操作是一致的，那么将当前操作压入队列等待。比如，等待队列中是读线程等待，本次操作也是读，因此这两个读都需要等待。进入等待队列的线程可能会被挂起，它们会等待一个“匹配”操作。
+2.  如果等待队列中的元素和本次操作是互补的（比如等待操作是读，而本次操作是写），那么就插入一个“完成”状态的节点，并且让他“匹配”到一个等待节点上。接着弹出这两个节点，并且使得对应的两个线程继续执行。
+3.  如果线程发现等待队列的节点就是“完成”节点，那么帮助这个节点完成任务。其流程和步骤2是一致的。
+
+从整个数据投递的过程中可以看到，在SynchronousQueue中，参与工作的所有线程不仅仅是竞争资源的关系。更重要的是，它们彼此之间还会互相帮助。在一个线程内部，可能会帮助其他线程完成它们的工作。这种模式可以更大程度上减少饥饿的可能，提高系统整体的并行度。
+
+## 4.5 有关死锁的问题
+
+死锁就是两个或者多个线程，相互占用对方需要的资源，而都不进行释放，导致彼此之间都相互等待对方释放资源，产生了无限制等待的现象。
+
+![](/img/notes/java/highConcurrentProgramming/dinning_problem.jpeg)
+
+我们可以使用jps命令得到java进程的进程ID，接着使用jstack命令得到线程的线程堆栈：
+
+    $ jps
+    8404
+    944
+    3892 DeadLock
+    3260 Jps
+    $ jstack 3992
+    ...
+
+如果想避免死锁，除了使用无锁的函数外，另外一种有效的做法是使用重入锁，通过重入锁的中断或者限时等待可以有效规避死锁带来的问题。
+
+## 4.6 参考文献
+
+# 第5章 并行模式与算法
+
+## 5.1 探讨单例模式
+
+单例模式是一种对象创建模式，用于产生一个对象的具体实例，它可以确保系统中一个类只产生一个实例。好处有：
+
+*   对于频繁使用的对象，可以省略new操作花费的时间，这对于那些重量级对象而言，是非常可观的一笔系统开销；
+*   由于new操作的次数减少，因而对系统内存的使用频率也会降低，这将减轻GC压力，缩短GC停顿时间。
+
+一个正确良好的实现：
+
+    public class Singleton {
+        private Singleton() {
+            System.out.println("Singleton is create");
+        }
+        private static Singleton instance = new Singleton();
+        public static Singleton getInstance() {
+            return instance;
+        }
+    }
+
+明显不足：
+
+Singleton实例在什么时候创建是不受控制的。对于静态成员instance，它会在类第一次初始化的时候被创建。这个时刻并不一定是getInstance()方法第一次被调用的时候。
+
+LazySingleton：
+
+    public class LazySingleton {
+        private LazySingleton {
+            System.out.println("LazySingleton is create");
+        }
+        private static LazySingleton instance = null;
+        public static synchronized LazySingleton getInstance() {
+            if (instance == null) {
+                instance = new LazySingleton();
+            }
+            return instance;
+        }
+    }
+
+好处：充分利用了延迟加载，只在真正需要时创建对象。
+
+坏处：并发环境下加锁，竞争激烈的场合对性能可能产生一定的影响。
+
+结合两者之优势的方法：
+
+    public class StaticSingleton {
+        private StaticSingleton() {
+            System.out.println("StaticSingleton is create");
+        }
+        private static class SingletonHolder {
+            private static StaticSingleton instance = new StaticSingleton();
+        }
+        public static StaticSingleton getInstance() {
+            return SingletonHolder.instance;
+        }
+    }
+
+## 5.2 不变模式
+
+不变模式天生就是多线程友好的，它的核心思想是，一个对象一旦被创建，则它的内部状态将永远不会发生改变。所以，没有一个线程可以修改其内部状态和数据，同时其内部状态也绝不会自行发生改变。基于这些特性，对不变对象的多线程操作不需要进行同步控制。
+
+不变欧式是比只读属性具有更强的一致性和不变性，对只读属性的对象而言，对象本身不能被其他线程修改，但是对象的自身状态却可能自行修改。
+
+不变模式的主要使用场景需要满足以下2个条件：
+
+*   当对象创建后，其内部状态和数据不再发生任何变化。
+*   对象需要被共享，被多线程频繁访问。
+
+在Java语言中，不变模式的实现很简单，只需要注意以下4点：
+
+*   去除setter方法以及所有修改自身属性的方法。
+*   将所有属性设置为私有，并用final标记，确保其不可修改。
+*   确保没有子类可以重载修改它的行为。
+*   有一个可以创建完整对象的构造函数。
+
+示例代码：
+
+    public final class Product {
+        private final String no;
+        private final String name;
+        private final double price;
+
+        public Product(String no, String name, double price) {
+            super();
+            this.no = no;
+            this.name = name;
+            this.price = price;
+        }
+
+        public String getNo() {
+            return no;
+        } 
+
+        public String getName() {
+            return name;
+        }
+
+        public double getPrice() {
+            return price;
+        }
+    }
+
+在JDK中，主要的不变模式类型如下：
+
+*   java.lang.String
+*   java.lang.Boolean
+*   java.lang.Byte
+*   java.lang.Character
+*   java.lang.Double
+*   java.lang.Float
+*   java.lang.Integer
+*   java.lang.Long
+*   java.lang.Short
+
+不变模式通过回避问题而不是解决问题的态度来处理多线程并发访问控制。不变对象实不需要进行同步操作的。由于并发同步会对性能产生不良的影响，因此，在需求允许的情况下，不变模式可以提高系统的并发性能和并发量。
+
+## 5.3 生产者-消费者模式
+
+生产者-消费者模式是一个经典的多线程设计模式，它为多线程间的协作提供了良好的解决方案。在生产者-消费者模式中，通常有两类线程，即若干个生产者线程和若干个消费者线程。生产者线程负责提交用户请求，消费者线程则负责具体处理生产者提交的任务。生产者和消费者之间则通过共享内存缓冲区进行通信。
+
+生产者-消费者模式中的内存缓存区的主要功能是数据在多线程间的共享，此外，通过该缓冲区，可以缓解生产者和消费者间的性能差。
+
+![](/img/notes/java/highConcurrentProgramming/producter_consumer_structure.jpeg)
+
+生产者-消费者模式的主要角色：
+
+*   生产者：用于提交用户请求，提取用户任务，并装入内存缓冲区。
+*   消费者：在内存缓冲区中提取并处理任务。
+*   内存缓冲区：缓存生产者提交的任务或数据，供消费者使用
+*   任务：生产者向内存缓冲区提交的数据结构
+*   Main：使用生产者和消费者的客户端
+
+生产者-消费者模式很好地对生产者和消费者线程进行解耦，优化了系统整体结构。同时，由于缓冲区的作用，允许生产者线程和消费者线程存在执行上的性能差异，从一定程度上缓解了性能瓶颈对系统性能的影响。
+
+## 5.4 高性能的生产者-消费者：无锁的实现
+
+BlockingQueue用于实现生产者和消费者一个不错的选择。但是BlockingQueue并不是一个高性能的实现，它完全使用锁和阻塞等待来实现线程间的同步。在高并发场合，它的性能并不是特别的优越。
+
+如果我们使用CAS来实现生产者-消费者模式，也同样可以获得可观的性能提升。
+
+### 5.4.1 无锁的缓存框架：Disruptor
+
+Disruptor使用无锁的方式实现了一个环形队列，非常适合于实现生产者和消费者模式，比如事件和消息的发布。在Disruptor中，别出心裁地使用了环形队列（RingBuffer）来代替普通线性队列，这个环形队列内部实现为一个普通的数组。Disruptor要求我们必须将数组的大小设置为2的整数次方。这样通过sequence & (queueSize - 1)就能立即定位到实际的元素位置index。这个要比取余（%）操作快得多。
+
+RingBuffer的结构：生产者向缓冲区中写入数据，而消费者从中读取数据。生产者写入数据时，使用CAS操作，消费者读取数据时，为了防止多个消费者处理同一个数据，也使用CAS操作进行数据保护。
+
+这种固定大小的环形队列的另外一个好处就是可以做到完全的内存复用。在系统的运行过程中，不会有新的空间需要分配或者老的空间需要回收。因此，可以大大减少系统分配空间以及回收空间的额外开销。
+
+### 5.4.2 用Disruptor实现生产者-消费者案例
+
+根据Disruptor的官方报告，Disruptor的性能要比BlockingQueue至少高一个数量级以上。
+
+### 5.4.3 提高消费者的相应时间：选择合适的策略
+
+消费者如何监控缓冲区中的信息呢？为此，Disruptor提供了几种策略，这些策略由WaitStrategy接口进行封装，主要实现有：
+
+*   BlockingWaitStrategy：默认的策略，最节省CPU，但在高并发下性能表现最糟糕。
+*   SleepingWaitStrategy：对CPU使用率也非常保守，有较高的平均延时，比较适合于对延时要求不是特别高的场合，好处是它对生产者线程的影响最小（典型场景：异步日志）。
+*   YieldingWaitStrategy：用于低延时的场合。
+*   BusySpinWaitStrategy：最疯狂的等待策略，就是一个死循环，消费者线程尽最大努力疯狂监控缓冲区的变化。它会吃掉所有的CPU资源。
+
+### 5.4.4 CPU Cache的优化：解决伪共享问题
+
+什么是伪共享？为了提高CPU的速度，CPU有一个高速缓存Cache。在高速缓存中，读写数据的最小单位为缓存行（Cache Line），它是从主存（memory）复制到缓存（Cache）的最小单位，一般为32字节到128字节。
+
+如果两个变量存放在一个缓存行中时，在多线程访问中，可能会相互影响彼此的性能。假设X和Y在同一个缓存行。运行在CPU1上的线程更新了X，那么CPU2上的缓存行就会失效，同一行的Y即使没有修改也会变成无效，导致Cache无法命中。这种情况反反复复发生，无疑是一个潜在的性能杀手。如果CPU经常不能命中缓存，那么系统的吞吐量就会急剧下降。
+
+为了使这种情况不发生，一种可行的做法就是在X变量的前后空间都先占据一定的位置（把它叫做padding吧，用来填充的）。
+
+由于各个JDK版本内部实现不一致，在某些JDK版本中（比如JDK 8），会自动优化不使用的字段。这将直接导致这种padding的伪共享解决方案失效。
+
+Disruptor框架的核心组件Sequence中，主要使用的只有value。但是，通过LhsPadding和RhsPadding，在这个value的前后安置了一些占位空间，使得value可以无冲突的存在于缓冲中。
+
+此外，对于Disruptor的环形缓冲区RingBuffer，它内部的数组是通过以下语句构造的：
+
+    this.entries = new Object[sequencer.getBufferSize() + 2 * BUFFER_PAD];
+
+相当于在这个数组的头部和尾部两段各增加了BUFFER_PAD个填充，使得整个数组被载入Cache时不会受到其他变量的影响而失效。
+
+## 5.5 Future模式
+
+对于Future模式来说，虽然它无法立即给出你需要的数据。但是，它会返回给你一个契约，将来，你可以凭借着这个契约区重新获取你需要的信息。
+
+### 5.5.1 Future模式的主要角色
+
+*   Main：系统启动，调用Client发出请求
+*   Client：返回Data对象，立即返回FutureData，并开启ClientThread线程装配RealData
+*   Data：返回数据的接口
+*   FutureData：Future数据，构造很快，但是是一个虚拟的数据，需要装配RealData
+*   RealData：真实数据，其构造是比较慢
+
+### 5.5.2 Future模式的简单实现
+
+Data接口：
+
+    public interface Data {
+        public String getResult();
+    }
+
+FutureData实现了一个快速返回的RealData包装。
+
+    public class FutureData implements Data {
+        protected RealData realdata = null;
+        protected boolean isReady = false;
+        public synchronized void setRealData(RealData realdata) {
+            if (isReady) {
+                return;
+            }
+            this.realdata = realdata;
+            isReady = true;
+            notifyAll();
+        }
+
+        public synchronized String getResult() {
+            while (!isReady) {
+                try {
+                    wait();
+                } catch (InterruptedException e) {
+
+                }
+            }
+            return realdata.result;
+        }
+    }
+
+ReadData是最终需要使用的数据模型。它的构造很慢。
+
+    public class RealData implements Data {
+        protected final String result;
+        public RealData(String para) {
+            StringBuffer sb = new StringBuffer();
+            for (int i = 0; i < 10; i++) {
+                sb.append(para);
+                try {
+                    // 这里使用sleep代替一个很慢的操作过程
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+
+                }
+            }
+            result = sb.toString();
+        }
+
+        public String getResult() {
+            return result;
+        }
+    }
+
+Client主要实现了获取FutureData，并开启构造RealData的线程，并在接受请求后，很快的返回FutureData，它不会等待数据真的构造完毕再返回，而是立即返回FutureData。
+
+    public class Client {
+        public Data request(final String queryStr) {
+            final FutureData future = new FutureData();
+            new Thread() {
+                public void run() {
+                    RealData realdata = new RealData(queryStr);
+                    future.setRealData(realdata);
+                }
+            }.start();
+            return future;
+        }
+    }
+
+最后，就是我们的主函数Main，它主要负责调用Client发起请求，并消费返回的数据。
+
+    public static void main(String[] args) {
+        Client client = new Client();
+        Data data = client.request("name");
+        System.out.println("请求完毕")；
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+
+        }
+
+        System.out.println("数据 = " + data.getResult());
+    }
