@@ -50,7 +50,7 @@ github地址：[https://github.com/javadeep/common-functional](https://github.co
 		.on(Objects::nonNull, "car is null")
 		.on(car -> car.getSeatCount() >= 2, "Seat count is not valid")
 		.doValidate()
-		.fold(car -> "success", System.out::println, e -> System.out.println(e.getMessage()));
+		.fold(car -> "success", result -> result.toString(), e -> e.getMessage());
 	System.out.println(ret);
 	
 代码看着非常优雅简洁吧，和上面的fluent-validator风格的代码相比，你无须创建额外的校验器类，而由对应的函数（Lambda表达式）替换，另外对于校验结果的处理，由fold方法配合3个函数即可优雅地处理可能出现的3种分支情况（校验成功、校验失败、出现异常）。同时，假如car对象为null，则由于car -> car.getSeatCount() >= 2函数 的惰性求值特性，在doValidate()之前不会调用到car.getSeatCount()，也就不会再出现可恶的NPE了（第一个null校验后即failFast）。
