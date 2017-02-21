@@ -199,3 +199,36 @@ application.properties：
 		
 		...
 	}
+	
+### 6.2.3 类型安全的配置（基于properties）
+
+application.properties：
+
+	author.name=wyf
+	author.age=32
+	
+类型安全的Bean：
+
+	@Component
+	@ConfigurationProperties(prefix = "author")
+	public class AuthorSettings {
+		private String name;
+		private Long age;
+		
+		// Setter and Getter
+		...
+	}
+	
+通过@ConfigurationProperties加载properties文件内的配置，通过prefix属性指定properties的配置的前缀，通过locations指定properties文件的位置。
+
+检验代码：
+
+	public class Application {
+		
+		@Autowired
+		private AuthorSettings authorSettings;
+		
+		...
+	}
+	
+可以用@Autowired直接注入该配置
