@@ -164,3 +164,7 @@ date: 2016-10-22 12:00:00
 	@Rentention(value=RUNTIME)
 	@Target(value=TYPE)
 	public @interface FunctionalInterface
+	
+# 9. 自定义注解
+
+有很多其它属性可以用在自定义注解上，但是 目标 （Target）和 保留策略（Retention Policy）是最重要的两个
