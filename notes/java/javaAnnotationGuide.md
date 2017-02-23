@@ -135,4 +135,32 @@ date: 2016-10-22 12:00:00
 
 @Repeatable：说明该注解标识的注解可以多次使用到同一个元素的声明上。
 
+自Java8开始，我们可以在类型上使用注解。由于我们在任何地方都可以使用类型，包括 new操作符，casting，implements，throw等等。注解可以改善对Java代码的分析并且保证更加健壮的类型检查。
+
+	@SuppressWarnings("unused")
+	public static void main(String[] args) {
+		
+		// type def
+		@TypeAnnotated
+		String cannotBeEmpty = null;
+		
+		// type 
+		List<@TypeAnnotated String> myList = new ArrayList<String>();
+		
+		// values
+		String myString = new @TypeAnnotated String("this is annotated in java 8");
+	}
 	
+	// in method params
+	public void methodAnnotated(@TypeAnnotated int parameter) {
+		System.out.println("do nothing");
+	}
+	
+@FunctionalInterface：这个注解表示一个函数式接口元素。函数式接口是一种只有一个抽象方法（非默认）的接口。编译器会检查被注解元素，如果不符，就会产生错误。
+
+这个注解可以被使用到类，接口，枚举和注解本身。它的被JVM保留并在runtime可见，这个是它的声明：
+
+	@Documented
+	@Rentention(value=RUNTIME)
+	@Target(value=TYPE)
+	public @interface FunctionalInterface
