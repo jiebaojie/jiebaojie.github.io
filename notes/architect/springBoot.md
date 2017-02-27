@@ -232,3 +232,17 @@ application.properties：
 	}
 	
 可以用@Autowired直接注入该配置
+
+## 6.3 日志配置
+
+Spring Boot 支持Java Util Logging、Log4J、Log4J2和Logback作为日志框架，无论使用哪种日志框架，Spring Boot已为当前使用日志框架的控制台输出及文件输出做好了配置。
+
+默认情况下，Spring Boot 使用Logback作为日志框架。
+
+配置日志级别：
+
+	logging.file=D:/mylog/log.log
+	
+配置日志文件，格式为logging.level.包名=级别：
+
+	logging.level.org.springframework.web=DEBUG
