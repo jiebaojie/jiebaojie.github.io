@@ -168,3 +168,83 @@ date: 2016-10-22 12:00:00
 # 9. 自定义注解
 
 有很多其它属性可以用在自定义注解上，但是 目标 （Target）和 保留策略（Retention Policy）是最重要的两个
+
+# 10. 获取注解
+
+*	getAnnotations()：返回该元素的所有注解，包括没有显示定义该元素上的注解。
+*	isAnnotationPresent(annotation)：检查传入的注解是否存在于当前元素
+*	getAnnotation(class)：按照传入的参数获取指定类型的注解。返回null说明当前元素不带有此注解。
+
+# 11. 注解中的继承
+
+如果一个注解在Java中被标识成继承，使用了保留注解@Inherited，说明它注解的这个类将自动地把这个注解传递到所有子类中而不用在子类中声明。通常，一个类继承了父类，并不继承父类的注解。这完全和使用注解的目的一致的：提供关于被注解的代码的信息而不修改它们的行为。
+
+	@Inherited
+	@Retention(RetentionPolicy.RUNTIME)
+	@Target(ElementType.TYPE)
+	public @interface InheritedAnnotation {
+	}
+	
+继承注解和接口在一起使用时，接口中的注解在实现类中：仅仅被忽略。实现类并不继承接口的注解；接口继承仅仅适用于类继承。
+
+@Inheriated注解仅在存在继承关系的类上产生效果，在接口和实现类上并不工作。这条同样也适用在方法，变量，包等等。只有类才和这个注解连用。
+
+一条关于@Inheriated注解的很好的解释在Javadoc中：[http://docs.oracle.com/javase/7/docs/api/java/lang/annotation/Inherited.html](http://docs.oracle.com/javase/7/docs/api/java/lang/annotation/Inherited.html)
+
+注解不能继承注解。
+
+# 12. 使用注解的知名类库
+
+## 12.1 JUnit
+
+*	@Test：这个注解向JUnit说明这个被注解的方法一定是一个可执行的测试方法。这个注解只能标识在方法上，并且被JVM保留至运行时。
+*	@Before：这个注解用来向JUnit说明被标记的方法应该在所有测试方法之前被执行。这对于在测试之前设置测试环境和初始化非常有用。同样只适用于方法上。
+*	@After：这个注解用来向JUnit说明被注解的方法应该在所有单元测试之后执行。这个注解通常用来销毁资源，关闭，释放资源或者清理，重置等工作。
+*	@Ignore：这个方法用来向JUnit说明被注解的方法应该不被当作测试单元执行。即使它被注解成为一个测试方法，也只能被忽略。
+*	@FixMethodOrder：指定执行的顺序，正常情况下Junit处理程序负责它按照完全随机的无法预知的顺序执行。当所有的测试方法都相互独立的时候，不推荐使用这个注解。但是，当测试的场景需要测试方法按照一定规则的时候，这个注解就派上用场了。
+
+还有一些测试套件和类库使用了注解，例如Mockito和JMock，使用注解来创建测试对象和预期值。
+
+## 12.2 Hibernate ORM
+
+@Entity、@Table、@Id、@GeneratedValue、@Column
+
+## 12.3 Spring MVC
+
+*	@Component：说明被标记的元素，在本例中是一个类，是一个自动检测的目标。这意味着被注解的类，将会被Spring容器实例化并管理。
+*	@Autowired：Spring容器将会尝试通过类型（这是一种元素匹配机制）使用这个set方法来自动装配。此注解也可以使用在构造器和属性上，Spring也会根据注解的地方不同采取不同的操作。
+
+## 12.4 Findbugs
+
+这是一个用来测量代码质量，并提供一系列可能提高它的工具。它会根据预定义（或者自定义）的违反规则来检查代码。Findbugs提供一系列注解来允许开发者来改变默认行为。
+
+它主要使用反射读取代码（和包含的注解）并决定基于它们，应该采取什么行为。
+
+## 12.5 JAXB
+
+JAXB是一个用来相互转换和映射XML文件与Java对象的类库。实际上，这个类库与标准JRE一起提供，不需要任何额外的下载和配置。可以直接通过引入 java.xml.bind.annotation 包下的类直接使用。
+
+JAXB使用注解来告知处理程序（或者是JVM）XML文件与代码的相互转化。
+
+	@XmlType( propOrder = { "brand", "model", "year", "km" } )
+	@XmlRootElement( name = "Car" )
+	class Car
+	...
+	
+使用注解@XmlType，@XmlRoootElement。它们用来告知 JAXB 处理程序 Car 这个类在转换后，将会转换成为XML中的一个节点。这个@XmlType说明了属性在XML中的顺序。JAXB将会基于这些注解执行合适的操作。
+
+# 13. 总结
+
+# 14. 下载
+
+# 15. 资料
+
+[官方Java注解地址](http://docs.oracle.com/javase/tutorial/java/annotations/)
+
+[维基百科中关于Java注解的解释](http://en.wikipedia.org/wiki/Java_annotation)
+
+[Java规范请求250](http://en.wikipedia.org/wiki/JSR_250)
+
+[Oracle 注解白皮书](http://www.oracle.com/technetwork/articles/hunter-meta-096020.html)
+
+[注解API](http://docs.oracle.com/javase/7/docs/api/java/lang/annotation/package-summary.html)
