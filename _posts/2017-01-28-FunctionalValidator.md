@@ -83,6 +83,10 @@ ValidationError构造方式如下：
 		.errorCode(123)			// 错误码（选填）
 		.invalidValue(car);		// 错误值（选填）
 		
+其中errorMessage还可以带上params参数，供扩展使用，如：
+
+	ValidationError.of("errorMessage:%d", messageNo); 
+		
 ## 3.2 fail fast or fail over
 
 当出现校验失败时，也就是出现了ValidationError，那么是继续还是直接退出呢？默认为使用failFast()方法，直接退出，如果你想继续完成所有校验，使用failOver()来skip掉。
@@ -119,6 +123,9 @@ ValidationResult数据结构定义如下：
 
 	public final class ValidationResult {
 		private List<ValidationError> errors = new LinkedList<>();	// 校验错误集合
+		private boolean success = true;		// 校验是否成功，不可被外部应用直接修改
+		private int globalErrorCode;		// 全局错误码（可通过addGlobalError()方法加入）
+		private String globalErrorMessage;	// 全局错误信息（可通过addGlobalError()方法加入）
 		private long timeElapsed;	// 校验耗时
 	}
 	
@@ -132,7 +139,11 @@ ValidationResult数据结构定义如下：
         .on(HibernateSupportedValidator.build().validator())
         .doValidate();
 		
-HibernateSupportedValidator依赖于javax.validation.Validator的实现，build()方法使用了Hibernate Validator官方提供的初始化javax.validation.Validator实现的方法，也可以自己提供validator：
+HibernateSupportedValidator依赖于javax.validation.Validator的实现，build()方法使用了Hibernate Validator官方提供的初始化javax.validation.Validator实现的方法，默认策略为failFast，也可以使用failOver策略的Validator:
+
+	HibernateSupportedValidator.buildByFailOverValidator();
+
+也可以自己提供validator：
 
 	HibernateSupportedValidator.buildByValidator(myValidator).validator();
 	
@@ -152,6 +163,49 @@ HibernateSupportedValidator依赖于javax.validation.Validator的实现，build(
 	
 functional-validator对Hibernate Validator的集成主要依靠HibernateSupportedValidator类，整个类的实现都是基于函数式的，非常优雅、简洁，读者可通过阅读源码来体会下functional-validator通过函数来实现校验器的精妙之处。
 
+## 4.2 Spring AOP集成
+
+借助Spring AOP技术，Fuctional Validator实现了业务逻辑和验证逻辑的解耦，如下示例，业务代码中有个add方法需要校验参数：
+
+	@Component
+	public class Demo {
+		
+		@Valid(value = DemoValidator.class, method = "add", failFast = true, hibernateValidate = true, hibernateErrorCode = 0)
+		public void add(Department department, Car car) {
+			...
+		}
+	}
+	
+@Valid注解表示该方法的参数需要校验，其参数含义如下：
+
+*	value：指明自定义校验器对应的Class，默认为Void.class（表明不需要自定义校验），以上的注解可简化为：@Valid(DemoValidator.class)，如果不需要自定义校验，仅仅使用集成的HibernateValidator进行校验，则注解形式可简化为：@Valid。
+*	method：校验方法的别名，需要与实际校验器@ValidHandler注解上的value相匹配，默认为空字符串，表示与被注解的方法名相同。value相当于指定了校验器的类名，method相当于指定了校验器的方法名
+*	failFast：校验出错是否立即返回
+*	hibernateValidate：是否需要进行HibernateValidator的校验，如果为true，则先执行HibernateValidator的校验
+*	hibernateErrorCode：Hibernate校验失败后需返回的错误码
+
+接下来需要实现一个校验处理器，类名即为@Valid中指定的value：
+
+	@Component
+	public class DemoValidator {
+		
+		@ValidHandler("add")
+		public void add(ValidationResult result, Department department, Car car) {
+			if (car.getSeatCount() > 2) {
+				result.addError(ValidationError.of("car seat count invalid"));
+				return;
+			}
+			...
+		}
+	}
+	
+@ValidHandler注解表示该方法实现对参数的校验，是真正的校验逻辑，该注解参数只有1个：
+
+*	value：校验方法的别名，默认为空，表示与被注解的方法名相同。
+
+此时，每次调用Demo对象的add()方法前，就会执行DemoValidator的add()方法进行逻辑校验，如果校验失败，则会抛出ValidationException异常。如果你是Web工程，则可配合ExceptionHandler做对应的处理。
+
+	
 # 5 总结
 
 首先要非常感谢[fluent-validator](https://github.com/neoremind/fluent-validator)项目对我创作的启发。本文从对fluent-validator框架实践中的痛点引出，展示了functional-validator更优雅、更易用的函数式API调用，以及对JSR303 – Bean Validation规范的集成，基本对functional-validator做了一个全面的介绍。
