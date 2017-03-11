@@ -13,6 +13,17 @@ date: 2017-02-19 00:00:00
 *   目录
 {:toc }
 
+### 11.4.5 缓存处理
+
+Last-Modified缓存机制：
+
+1.	在客户端第一次输入URL时，服务器端会返回内容和状态码200，表示请求成功，同时会添加一个"Last-Modified"的响应头，表示此文件在服务器上的最后更新时间。
+2.	客户端第二次请求此URL时，客户端会向服务器发送请求头"If-Modified-Since"，询问服务器该时间之后当前请求内容是否有被修改过，如果服务器端的内容没有变化，则自动返回HTTP 304状态码（只要响应头，内容为空，这样就节省了网络带宽）。
+
+Spring提供了对Last-Modified机制的支持，只需要实现LastModified接口，接口的getLastModified方法保证当内容发生改变时返回最新的修改时间即可。
+
+Spring判断是否过期，通过判断请求的"If-Modified-Since"是否大于等于当前的getLastModified方法的时间戳，如果是，则认为没有修改。
+
 ### 11.4.6 HandlerInterceptor的处理
 
 Servlet API定义的servlet过滤器可以在servlet处理每个Web请求的前后分别对它进行前置处理和后置处理。
