@@ -359,6 +359,123 @@ Spring 主要在注解 @Value 的参数中使用表达式。
 		}
 	}
 	
+## 2.4 Profile
+
+### 2.4.1 点睛
+
+Profile 为在不同环境下使用不同的配置提供了支持。
+
+### 2.4.2 演示
+
+	@Configuration
+	public class ProfileConfig {
+	
+		@Bean
+		@Profile("dev")
+		public DemoBean devDemoBean() {
+			return new DemoBean("from development profile");
+		}
+		
+		@Bean
+		@Profile("prod")
+		public DemoBean prodDemoBean() {
+			return new DemoBean("from production profile");
+		}
+	}
+	
+## 2.5 事件（Application Event）
+
+### 2.5.1 点睛
+
+Spring的事件（Application Event）为Bean与Bean之间的消息通信提供了支持。当一个Bean处理完一个任务之后，希望另外一个Bean知道并能做相应的处理，这时我们就需要让另外一个Bean监听当前Bean所发送的事件。
+
+Spring的事件需要遵循如下流程：
+
+1.	自定义事件，继承ApplicationEvent。
+2.	定义事件监听器，实现ApplicationListener。
+3.	使用容器发布事件。
+
+### 2.5.2 示例
+
+#### （1）自定义事件
+
+	public class DemoEvent extends Application {
+		private static final long serialVersionUID = 1L;
+		private String msg;
+		
+		pubilc DemoEvent(Object source, String msg) {
+			super(source);
+			this.msg = msg;
+		}
+		
+		public String getMsg() {
+			return msg;
+		}
+	}
+	
+#### （2）事件监听器
+
+	@Component
+	public class DemoListener implements ApplicationListener<DemoEvent> {
+		
+		public void onApplicationEvent(DemoEvent event) {
+			String msg = event.getMsg();
+			System.out.println(msg);
+		}
+	}
+	
+#### （3）事件发布类
+
+	@Component
+	public class DemoPublisher {
+		@Autowired
+		ApplicationContext applicationContext;
+		
+		public void publish(String msg) {
+			applicationContext.publishEvent(new DemoEvent(this, msg));
+		}
+	}
+	
+#### （4）配置类
+
+	@Configuration
+	@ComponentScan("com.wisely.highlight_spring4.ch2.event")
+	public class EventConfig {
+	
+	}
+	
+#### （5）运行
+
+	public class Main {
+		public static void main(String[] args) {
+			AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(EventConfig.class);
+			DemoPublisher demoPublisher = context.getBean(DemoPublisher.class);
+			demoPublisher.publish("hello application event");
+			context.close();
+		}
+	}
+	
+# 第3章 Spring高级话题
+
+## 3.1 Spring Aware
+
+### 3.1.1 点睛
+
+Spring的依赖注入的最大亮点就是你所有的Bean对Spring容器的存在是没有意识的。
+
+但是在实际项目中，你不可避免的要用到Spring容器本身的功能资源，这时你的Bean必须要意识到Spring容器的存在，才能调用Spring所提供的资源，这就是所谓的Spring Aware。其实Spring Aware本来就是Spring设计用来框架内部使用的，若使用了Spring Aware，你的Bean将会和Spring框架耦合。
+
+Spring提供的Aware接口如下：
+
+*	BeanNameAware：获得到容器中Bean的名称
+*	BeanFactoryAware：获得当前bean factory，这样可以调用容器的服务
+*	ApplicationContextAware：当前的application context，这样可以调用容器的服务
+*	MessageSourceAware：获得message source，这样可以获得文本信息
+*	ApplicationEventPublisherAware：应用事件发布器，可以发布事件，2.5节的DemoPublisher也可实现这个接口来发布事件
+*	ResourceLoaderAware：获得资源加载器，可以获得外部资源文件
+
+### 3.1.2 示例
+	
 ## 3.4 条件注解@Conditional
 
 ### 3.4.1 点睛
