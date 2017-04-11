@@ -15,6 +15,10 @@ date: 2017-04-09 00:00:00
 
 原文3：[http://lxw1234.com/archives/2016/11/787.htm](http://lxw1234.com/archives/2016/11/787.htm)
 
+原文4：[http://lxw1234.com/archives/2016/11/795.htm](http://lxw1234.com/archives/2016/11/795.htm)
+
+原文5：[http://lxw1234.com/archives/2017/01/832.htm](http://lxw1234.com/archives/2017/01/832.htm)
+
 *   目录
 {:toc }
 
@@ -232,3 +236,110 @@ Flume可以实时的从网络协议、消息系统、文件系统采集日志，
 如果你认真完成了上面的学习和实践，此时，你的”大数据平台”应该是这样的：
 
 ![](/img/notes/bigdata/bigDataBeginningLearner/spark.jpg)
+
+# 第六章：一夫多妻制
+
+在实际业务场景下，特别是对于一些监控日志，想即时的从日志中了解一些指标（关于实时计算，后面章节会有介绍），这时候，从HDFS上分析就太慢了，尽管是通过Flume采集的，但Flume也不能间隔很短就往HDFS上滚动文件，这样会导致小文件特别多。
+
+为了满足数据的一次采集、多次消费的需求，这里要说的便是Kafka。
+
+## 6.1 关于Kafka
+
+*	什么是Kafka？
+*	Kafka的核心概念及名词解释。
+
+## 6.2 如何部署和使用Kafka
+
+*	使用单机部署Kafka，并成功运行自带的生产者和消费者例子。
+*	使用Java程序自己编写并运行生产者和消费者程序。
+*	Flume和Kafka的集成，使用Flume监控日志，并将日志数据实时发送至Kafka。
+
+关于Kafka，可以参考[http://lxw1234.com/archives/category/kafka](http://lxw1234.com/archives/category/kafka)
+
+![](/img/notes/bigdata/bigDataBeginningLearner/kafka.jpg)
+
+这时，使用Flume采集的数据，不是直接到HDFS上，而是先到Kafka，Kafka中的数据可以由多个消费者同时消费，其中一个消费者，就是将数据同步到HDFS。
+
+你应该已经具备以下技能和知识点：
+
+*	为什么Spark比MapReduce快。
+*	使用SparkSQL代替Hive，更快的运行SQL。
+*	使用Kafka完成数据的一次收集，多次消费架构。
+*	自己可以写程序完成Kafka的生产者和消费者。
+
+从前面的学习，你已经掌握了大数据平台中的数据采集、数据存储和计算、数据交换等大部分技能，而这其中的每一步，都需要一个任务（程序）来完成，各个任务之间又存在一定的依赖性，比如，必须等数据采集任务成功完成后，数据计算任务才能开始运行。如果一个任务执行失败，需要给开发运维人员发送告警，同时需要提供完整的日志来方便查错。
+
+# 第七章：越来越多的分析任务
+
+不仅仅是分析任务，数据采集、数据交换同样是一个个的任务。这些任务中，有的是定时触发，有点则需要依赖其他任务来触发。当平台中有几百上千个任务需要维护和运行时候，仅仅靠crontab远远不够了，这时便需要一个调度监控系统来完成这件事。调度监控系统是整个数据平台的中枢系统，类似于AppMaster，负责分配和监控任务。
+
+## 7.1 Apache Oozie
+
+1.	Oozie是什么？有哪些功能？
+2.	Oozie可以调度哪些类型的任务（程序）？
+3.	Oozie可以支持哪些任务触发方式？
+4.	安装配置Oozie。
+
+## 7.2 其他开源的任务调度系统
+
+*	Azkaban：https://azkaban.github.io/
+*	light-task-scheduler：https://github.com/ltsopensource/light-task-scheduler
+*	Zeus：https://github.com/alibaba/zeus
+
+如果你认真完成了上面的学习和实践，此时，你的”大数据平台”应该是这样的：
+
+![](/img/notes/bigdata/bigDataBeginningLearner/schedule.jpg)
+
+# 第八章：我的数据要实时
+
+对于需要绝对实时的业务场景，用的比较多的是Storm，对于其他准实时的业务场景，可以是Storm，也可以是Spark Streaming。当然，如果可以的话，也可以自己写程序来做。
+
+## 8.1 Storm
+
+1.	什么是Storm？有哪些可能的应用场景？
+2.	Storm由哪些核心组件构成，各自担任什么角色？
+3.	Storm的简单安装和部署。
+4.	自己编写Demo程序，使用Storm完成实时数据流计算。
+
+## 8.2 Spark Streaming
+
+1.	什么是Spark Streaming，它和Spark是什么关系？
+2.	Spark Streaming和Storm比较，各有什么优缺点？
+3.	使用Kafka + Spark Streaming，完成实时计算的Demo程序。
+
+如果你认真完成了上面的学习和实践，此时，你的”大数据平台”应该是这样的：
+
+![](/img/notes/bigdata/bigDataBeginningLearner/storm_spark_streaming.jpg)
+
+至此，你的大数据平台底层架构已经成型了，其中包括了数据采集、数据存储与计算（离线和实时）、数据同步、任务调度与监控这几大模块。接下来是时候考虑如何更好的对外提供数据了。
+
+# 第九章：我的数据要对外
+
+通常对外（业务）提供数据访问，大体上包含以下方面：
+
+*	离线：比如，每天将前一天的数据提供到指定的数据源（DB、FILE、FTP）等；离线数据的提供可以采用Sqoop、DataX等离线数据交换工具。
+*	实时：比如，在线网站的推荐系统，需要实时从数据平台中获取给用户的推荐数据，这种要求延时非常低（50毫秒以内）。根据延时要求和实时数据的查询需要，可能的方案有：HBase、Redis、MongoDB、ElasticSearch等。
+*	OLAP分析：OLAP除了要求底层的数据模型比较规范，另外，对查询的响应速度要求也越来越高，可能的方案有：Impala、Presto、SparkSQL、Kylin。如果你的数据模型比较规模，那么Kylin是最好的选择。
+*	即席查询：即席查询的数据比较随意，一般很难建立通用的数据模型，因此可能的方案有：Impala、Presto、SparkSQL。
+
+这么多比较成熟的框架和方案，需要结合自己的业务需求及数据平台技术架构，选择合适的。原则只有一个：越简单越稳定的，就是最好的。
+
+如果你已经掌握了如何很好的对外（业务）提供数据，那么你的“大数据平台”应该是这样的：
+
+![](/img/notes/bigdata/bigDataBeginningLearner/application.jpg)
+
+# 第十章：牛逼高大上的机器学习
+
+在我们的业务中，遇到的能用机器学习解决的问题大概这么三类：
+
+*	分类问题：包括二分类和多分类，二分类就是解决了预测的问题，就像预测一封邮件是否垃圾邮件；多分类解决的是文本的分类；
+*	聚类问题：从用户搜索过的关键词，对用户进行大概的归类。
+*	推荐问题：根据用户的历史浏览和点击行为进行相关推荐。
+
+入门学习线路：
+
+*	数学基础；
+*	机器学习实战（Machine Learning in Action），懂Python最好；
+*	SparkMlLib提供了一些封装好的算法，以及特征处理、特征选择的方法。
+
+![](/img/notes/bigdata/bigDataBeginningLearner/machine_learning.jpg)
