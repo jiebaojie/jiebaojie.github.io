@@ -1,7 +1,7 @@
 ---
 layout: post
 notes: true
-subtitle: "【技术博客】工作原理介绍"
+subtitle: "【技术博客】Apache Kafka工作原理"
 comments: false
 author: "IBM/周耀明"
 date: 2017-05-03 00:00:00
