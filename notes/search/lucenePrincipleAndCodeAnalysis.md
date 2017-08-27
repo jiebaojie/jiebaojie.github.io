@@ -788,7 +788,39 @@ IndexWriter 中与段合并有关的成员变量有：
 
 ## 第六章：Lucene打分公式的数学推导
 
+Lucene的搜索过程，很重要的一个步骤就是逐步的计算各部分的分数。
+
+Lucene的打分公式：
+
 ![](/img/notes/search/lucenePrincipleAndCodeAnalysis/score.png)
+
+每部分的意义：
+
+*	t：Term，这里的 Term 是指包含域信息的 Term，也即 title:hello 和 content:hello 是不同的 Term
+*	coord(q,d)：一次搜索可能包含多个搜索词，而一篇文档中也可能包括多个搜索词，此项表示，当一篇文档中包含的搜索词越多，则此文档则打分越高。
+*	queryNorm(q)：计算每个查询条目的方差和，此值并不影响排序，而仅仅使得不同的 query 之间的分数可以比较。其公式如下：
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/query_norm.png)
+
+*	tf(t in d)：Term t 在文档 d 中出现的词频
+*	idf(t)：Term t 在几篇文档中出现过
+*	norm(t, d)：标准化因子，它包括三个参数：
+	*	Document boost：此值越大，说明此文档越重要。
+	*	Field boost：此域越大，说明此域越重要。 
+	*	lengthNorm(field) = (1.0 / Math.sqrt(numTerms))：一个域中包含的 Term 总数越多，也即文档越长，此值越小，文档越短，此值越大。 
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/norm.png)
+
+![](/img/notes/search/lucenePrincipleAndCodeAnalysis/length_norm.png)
+
+*	各类 Boost 值
+	*	t.getBoost()：查询语句中每个词的权重，可以在查询中设定某个词更加重要，common^4 hello
+	*	d.getBoost()：文档权重，在索引阶段写入 nrm 文件，表明某些文档比其他文档更重要。
+	*	f.getBoost()：域的权重，在索引阶段写入 nrm 文件，表明某些域比其他的域更重要。
+
+，如何调整上面的各部分，以影响文档的打分，请参考[有关Lucene的问题(4):影响Lucene对文档打分的四种方式](http://www.cnblogs.com/forfuture1978/archive/2010/02/08/1666137.html)一文。
+
+		
 
 ## 第七章：Lucene搜索过程解析
 
