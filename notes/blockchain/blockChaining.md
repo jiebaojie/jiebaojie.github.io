@@ -3,7 +3,7 @@ layout: post
 notes: true
 subtitle: "【技术博客】李雷和韩梅梅用2排养乐多为你解释区块链！"
 comments: false
-author: "李超"
+author: "本能区块链"
 date: 2017-11-25 00:00:00
 
 ---
