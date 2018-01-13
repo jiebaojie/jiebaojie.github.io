@@ -514,3 +514,38 @@ Solr 使用~符号表示模糊编辑距离搜索。
 查询：administrator~N 匹配N个以内的编辑距离
 
 注意：两个以上的编辑距离会使得搜索速度大幅下降，也可能匹配出意外的词项。一到两个编辑距离的术语搜索使用有效的Levenshtein自动机方法执行，但超过两个编辑距离的查询就会退回到更慢的编辑距离实现方法。
+
+## 16. 精通相关度
+
+### 16.5 个性化搜索与推荐
+
+#### 16.5.1 推荐 vs. 推荐
+
+搜索引擎与推荐引擎的工作原理相同：通过建立文档之间链接的稀疏矩阵，使用某种相似性度量来寻找最佳匹配。搜索是“词项——文档”矩阵，推荐是“偏好——文档”矩阵。
+
+搜索与推荐的真正区别在于：
+
+*	搜索一般是需要用户输入的手工任务
+*	推荐通常是了解用户的有关情况
+
+推荐是一种自动化搜索，非人工判断哪些是用户想要的相关内容
+
+基于内容的推荐方法：
+
+*	基于属性的匹配
+*	基于层级分类的匹配
+*	基于抽取的兴趣物品的匹配（更多类似结果）
+*	基于概念的匹配
+*	基于地理位置的匹配
+
+协同过滤技术：基于用户与内容的交互进行推荐，让Solr从用户行为中不断学习，通过返回的更多相关结果反映其智能化程度。
+
+#### 16.5.2 基于属性的匹配
+
+q=(jobtitle:"nurse educator"^25 OR jobtitle:(nurse educator)^10) AND ((city:"Boston" AND state:"MA")^15 OR state:"MA") AND \_val\_:"map(salary, 40000, 60000, 10, 0)"
+
+#### 16.5.3 分层匹配
+
+假设对用户和内容进行分类，将其归入某种层级中（从一般类目到具体类目），这样就可以对这个层级进行查询，对更加专指的匹配赋予更高的相关度权重。
+
+df=classification&q=(("healthcare.nursing.oncology"^40 OR "healthcare.nursing"^20 OR "healthcare"^10) OR ("healthcare.nursing.transplant"^20 OR "healthcare.nursing"^10 OR "healthcare"^5) OR ("education.postsecondary.nursing"^10 OR "education.postsecondary"^5 OR "education"))
