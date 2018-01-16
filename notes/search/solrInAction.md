@@ -549,3 +549,25 @@ q=(jobtitle:"nurse educator"^25 OR jobtitle:(nurse educator)^10) AND ((city:"Bos
 假设对用户和内容进行分类，将其归入某种层级中（从一般类目到具体类目），这样就可以对这个层级进行查询，对更加专指的匹配赋予更高的相关度权重。
 
 df=classification&q=(("healthcare.nursing.oncology"^40 OR "healthcare.nursing"^20 OR "healthcare"^10) OR ("healthcare.nursing.transplant"^20 OR "healthcare.nursing"^10 OR "healthcare"^5) OR ("education.postsecondary.nursing"^10 OR "education.postsecondary"^5 OR "education"))
+
+#### 16.5.4 更多类似结果
+
+Sorl的更多类似结果处理器能够处理任何文档，它从文档中抽取感兴趣的词项，使用这些词项进行关键词搜索，以此寻找类似的文档。从内部看，更多类似结果处理器会从文档中抽取感兴趣的词项，将文档视为词项向量，根据tf-idf相似度计算，抽取匹配度最高的词项。
+
+##### 外部文档的更多类似结果
+
+更多类似结果处理器还可以根据传入外部文档的全文进行推荐。
+
+#### 16.5.5 基于概念的匹配
+
+Solr的聚类组件
+
+#### 16.5.6 地理位置的匹配
+
+谨慎地考虑是否要为高度敏感的用户设置严格的位置过滤器（15.2）
+
+为地理位置接近的文档略微提升相关度（16.3.4）
+
+#### 16.5.7 协同过滤
+
+协同过滤不是基于内容相似度，而是基于用户与文档的交互行为。
