@@ -191,4 +191,269 @@ f ○ g (x)和f(g(x))式等价的。
 
 ### 2.2.5 通过lambda简化代码
 
-## 2.3 高级函数类型
+## 2.3 高级函数特性
+
+### 2.3.1 多参函数怎么样
+
+### 2.3.2 应用柯里化函数
+
+### 2.3.3 高阶函数
+
+接收函数为参数并返回函数，被称为高阶函数（higher-order function，即HOF）
+
+### 2.3.4 多态高阶函数
+
+### 2.3.5 使用匿名函数
+
+### 2.3.6 局部函数
+
+### 2.3.7 闭包
+
+lambda还有附加需求：一个lambda访问的局部变量必须式final的。这并不是lambda的新要求，而是Java 8以前的版本对匿名类的要求，而lambda也需要遵守相同的约定，虽然它并没有那么严格。自Java 8起，从匿名类或是lambda访问的元素都是隐式final的；它们无须被声明为final来表明它们不会被改变的。
+
+### 2.3.8 部分函数应用和自动柯里化
+
+柯里化包括了把接收元组的函数替换为可以部分应用各个参数的函数。这是柯里化函数和元组函数最主要的区别。使用元组函数，所有的参数都在调用函数之前就计算出来了。使用柯里化版本，所有的参数都必须在完全应用函数之前确定，但是每个单独的参数都可以在函数部分应用它之前才计算。你不必将函数完全柯里化。一个接收三个参数的函数可以被柯里化为一个生成单参函数的二元组函数。
+
+### 2.3.9 交换部分应用函数的参数
+
+	public static <T, U, V> Function<U, Function<T, V>> reverseArgs(Function<T, Function<U, V>> f) {
+		return u -> t -> f.apply(t).apply(u);
+	}
+	
+### 2.3.10 递归函数
+
+	public final Function<Integer, Integer> factorial = n -> n <= 1 ? n : n * this.factorial.apply(n - 1);
+	
+	public static final Function<Integer, Integer> factorial = n -> n <= 1 ? n : n * FunctionExamples.factorial.apply(n - 1);
+	
+### 2.3.11 恒等函数
+
+## 2.4 Java 8 的函数式接口
+
+## 2.5 调试lambda
+
+## 2.6 总结
+
+*	函数是源集和目标集之间的关系。它在源集的元素（定义域）和目标集的元素（陪域）之间建立联系。
+*	纯函数除了返回一个值以外，没有任何可观测的作用。
+*	函数只有一个参数，参数可能是一个元组，元组内包含着多个元素。
+*	元组函数可以被柯里化，以便能够一次应用元组里的一个元素。
+*	当柯里化函数仅被应用于一部分参数时，我们称其被部分应用了。
+*	在Java里，函数可以表现为方法、lambda、方法应用或是匿名类。
+*	方法引用是函数的最佳表现形式。
+*	函数可以复合为新函数。
+*	函数可以递归调用它自己，但是递归的深度受限于栈的大小。
+*	lambda和方法引用可以用于需要函数式接口的地方。
+
+# 3. 让Java更加函数式
+
+本章要点：
+
+*	让标准控制结构具有函数式风格
+*	抽象控制结构
+*	抽象迭代
+*	使用正确的类型
+
+## 3.1 使标准控制结构具有函数式风格
+
+## 3.2 抽象控制结构
+
+### 3.2.1 清理代码
+
+	public interface Effect<T> {
+		
+		void apply(T t);
+	}
+	
+	public interface Result<T> {
+	
+		void bind(Effect<T> success, Effect<String> failure);
+		
+		public static<T> Result<T> failure(String message) {
+			return new Failure<>(message);
+		}
+		
+		public static <T> Result<T> success(T value) {
+			return new Success<>(value);
+		}
+		
+		public class Success<T> implements Result<T> {
+			
+			private final T value;
+			
+			private Success(T t) {
+				value = t;
+			}
+			
+			@Override
+			public void bind(Effect<T> success, Effect<String> failure) {
+				success.apply(value);
+			}
+		}
+		
+		public class Failure<T> implements Result<T> {
+			
+			private final String errorMessage;
+			
+			private Failure(String s) {
+				this.errorMessage = s;
+			}
+			
+			@Override
+			public void bind(Effect<T> success, Effect<String> failure) {
+				failure.apply(errorMessage);
+			}
+		}
+	}
+	
+### 3.2.2 if ... else的另一种方式
+
+	public class Case<T> extends Tuple<Supplier<Boolean>, Supplier<Result<T>>> {
+		
+		private Case(Supplier<Boolean> booleanSupplier, Supplier<Result<T>> resultSupplier) {
+			super(booleanSupplier, resultSupplier);
+		}
+	
+		private static class DefaultCase<T> extends Case<T> {
+			private DefaultCase(Supplier<Boolean> booleanSupplier, Supplier<Result<T>> resultSupplier) {
+				super(booleanSupplier, resultSupplier);
+			}
+		}
+	
+		public static <T> Case<T> mcase(Supplier<Boolean> condition, Supplier<Result<T>> value) {
+			return new Case<>(condition, value);
+		}
+	
+		public static <T> DefaultCase<T> mcase(Supplier<Result<T>> value) {
+			return enw DefaultCase<>(() -> true, value);
+		}
+		
+		@SafeVarags
+		public static <T> Result<T> match(DefaultCase<T> defaultCase, Case<T> ... matchers) {
+			for (Case<T> aCase : matchers) {
+				if (aCase._1.get()) {
+					return aCase._2.get();
+				}
+				return defaultCase._2.get();
+			}
+		}
+	}
+	
+## 3.3 抽象迭代
+
+你可能想在循环里做以下几件事情：
+
+*	将每个元素转换为其他元素。
+*	将元素聚合成单个结果。
+*	根据元素自身的条件删除一些元素。
+*	根据外部条件删除一些元素。
+*	根据某些条件分组元素。
+
+### 3.3.1 使用映射抽象列表操作
+
+### 3.3.2 创建列表
+
+	public static <T> List<T> list() {
+        return Collections.emptyList();
+    }
+
+    public static <T> List<T> list(T t) {
+        return Collections.singletonList(t);
+    }
+
+    public static <T> List<T> list(List<T> ts) {
+        return Collections.unmodifiableList(new ArrayList<>(ts));
+    }
+
+    public static <T> List<T> list(T... t) {
+        return Collections.unmodifiableList(Arrays.asList(Arrays.copyOf(t, t.length)));
+    }
+	
+### 3.3.3 使用head和tail操作
+
+对列表的函数式操作经常会访问列表的head（或第一个元素）以及tail（删除第一个元素后的列表）。
+
+	public static <T> Try<T> head(List<T> list) {
+        return Match.of(list).cases(
+                l -> Try.success(l.get(0)),
+                Case.of(l -> l.size() == 0, Try.failure(new IllegalStateException("head of empty list")))
+        );
+    }
+	
+	private static <T> List<T> copy(List<T> ts) {
+        return new ArrayList<>(ts);
+    }
+	
+	public static <T> Try<List<T>> tail(List<T> list) {
+
+        DefaultCase<List<T>, Try<List<T>>> defaultCase = l -> {
+            List<T> workList = copy(l);
+            workList.remove(0);
+            return Try.success(Collections.unmodifiableList(workList));
+        };
+
+        return Match.of(list).cases(
+                defaultCase,
+                Case.of(l -> l.size() == 0, Try.failure(new IllegalStateException("tail of empty list")))
+        );
+    }
+	
+### 3.3.4 函数式地添加列表元素
+
+	public static <T> List<T> append(List<T> list, T t) {
+        List<T> ts = copy(list);
+        ts.add(t);
+        return Collections.unmodifiableList(ts);
+    }
+	
+### 3.3.5 化简和折叠列表
+
+列表折叠（fold）通过使用一个特定操作来将列表转换为单值。
+
+可以从左到右或从右到左两个方向上折叠列表，视所用的操作而定：
+
+*	如果操作可交换，则两种折叠方式是等价的
+*	如果操作不可交换，则两种折叠方式会给出不同的结果
+
+折叠操作需要一个起始值，即操作的中性元素或单位元（identity element），该元素作为*累加器*（accumulator）的起始值。当计算完成时，累加器内即包含结果。另一方面，只要列表不为空，也可以在没有起始元素的情况下执行化简，因为第一个（或最后一个）元素将作为起始元素。
+
+左折叠：
+
+	public static <T, U> U foldLeft(List<T> ts, U identity, Function<U, Function<T, U>> f) {
+
+        U result = identity;
+        for (T t : ts) {
+            result = f.apply(result).apply(t);
+        }
+        return result;
+    }
+	
+右折叠：
+
+	public static <T, U> U foldRight(List<T> ts, U identity, Function<T, Function<U, U>> f) {
+
+        U result = identity;
+        for (int i = ts.size() - 1; i >= 0; i--) {
+            result = f.apply(ts.get(i)).apply(result);
+        }
+        return result;
+    }
+	
+反转列表：
+
+	public static <T> List<T> reverse(List<T> list) {
+
+        List<T> result = new ArrayList<>(list.size());
+        for (int i = list.size() - 1; i >= 0; i--) {
+            result.add(list.get(i));
+        }
+        return Collections.unmodifiableList(result);
+    }
+	
+### 3.3.6 复合映射和映射复合
+
+映射复合而不是复合映射
+
+### 3.3.7 对列表应用作用
+
