@@ -457,3 +457,45 @@ lambda还有附加需求：一个lambda访问的局部变量必须式final的。
 
 ### 3.3.7 对列表应用作用
 
+### 3.3.8 处理函数式的输出
+
+### 3.3.9 构建反递归列表
+
+## 3.4 使用正确的类型
+
+### 3.4.1 标准类型的问题
+
+老规则：类不应该有相同类型的多个属性。
+
+### 3.4.2 定义值类型
+
+值类型是代表值的类型。
+
+	public class Price {
+		
+		public final double value;
+		
+		private Price(double value) {
+			this.value = value;
+		}
+		
+		public static Price price(double value) {
+			if (value <= 0) {
+				throw new IllegalArgumentException("Price must be greater than 0");
+			} else {
+				return new Price(value);
+			}
+		}
+		
+		public Price add(Price that) {
+			return new Price(this.value + that.value);
+		}
+		
+		public Price mult(int count) {
+			return new Price(this.value * count);
+		}
+	}
+	
+### 3.4.3 值类型的未来
+
+其他语言有内置的值类型，但Java并没有，虽然这可能会改变；已经有了一个在未来版本的Java中包含值类型的提案。
