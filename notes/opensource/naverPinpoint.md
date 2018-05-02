@@ -73,7 +73,7 @@ Pinpoint中的术语"TransactionId"和google dapper中的术语"TraceId"有相�
 
 下图描述TraceId的行为，在4个节点之间执行了3次的RPC调用：
 
-![](/img/notes/opensource/naverPinpoint/traceId.png)
+![](/img/notes/opensource/naverPinpoint/trace_id.png)
 
 在上图中，TransactionId (TxId) 体现了三次不同的RPC作为单个事务被相互关联。但是，TransactionId 本身不能精确描述PRC之间的关系。为了识别PRC之间的关系，需要SpanId 和 ParentSpanId (pSpanId). 假设一个节点是Tomcat，可以将SpanId想象为处理HTTP请求的线程，ParentSpanId代表发起这个RPC调用的SpanId。
 
@@ -136,3 +136,89 @@ Twitter的 Zipkin 使用修改过的类库和它自己的容器(Finagle)来提�
 	-Dpinpoint.applicationName=<The name indicating a same service (AgentId collection)>
 	
 如果因为pinpoint发生问题，只需要在JVM启动脚本中删除这些配置数据。
+
+### 字节码如何工作
+
+由于字节码增强技术处理java字节码， 有增加开发风险的趋势，同时会降低效率。另外，开发人员更容易犯错。在pinpoint，我们通过抽象出拦截器(interceptor)来改进效率和可达性(accessibility)。pinpoint在类装载时通过介入应用代码为分布式事务和性能信息注入必要的跟踪代码。这会提升性能，因为代码注入是在应用代码中直接实施的。
+
+![](/img/notes/opensource/naverPinpoint/byte_code.png)
+
+在pinpoint中，拦截器API在性能数据被记录的地方分开(separated)。为了跟踪，我们添加拦截器到目标方法使得before()方法和after()方法被调用，并在before()方法和after()方法中实现了部分性能数据的记录。使用字节码增强，pinpoint agent可以记录需要方法的数据，只有这样采样数据的大小才能变小。
+
+## pinpoint agent的性能优化
+
+最后，我们描述用于pinpoint agent的性能优化的方式。
+
+### 使用二进制格式(thrift)
+
+通过使用二进制格式(thrift)可以提高编码速度，虽然它使用和调试要难一些。也有利于减少网络使用，因为生成的数据比较小。
+
+### 使用变长编码和格式优化数据记录
+
+如果将一个长整型转换为固定长度的字符串， 数据大小一般是8个字节。然而，如果你用变长编码，数据大小可以是从1到10个字符，取决于给定数字的大小。为了减小数据大小，pinpoint使用thrift的CompactProtocol协议（压缩协议)来编码数据，因为变长字符串和记录数据可以为编码格式做优化。pinpoint agent通过基于跟踪的根方法的时间开始来转换其他的时间来减少数据大小。
+
+### 用常量表替换重复的API信息，SQL语句和字符串
+
+我们希望pinpoint能开启代码级别的跟踪。然而，存在增大数据大小的问题。每次高精度的数据被发送到服务器将增大数据大小，导致增加网络使用。
+
+为了解决这个问题，我们使用了在远程HBase中创建常量表的策略。例如，每次调用"Method A"的信息被发送到pinpoint collector， 数据大小将很大。pinpoint agent 用一个ID替换"method A"，在HBase中作为一个常量表保存ID和"method A"的信息，然后用ID生成跟踪数据。然后当用户在网站上获取跟踪数据时，pinpoint web在常量表中搜索对应ID的方法信息并组合他们。使用同样的方式来减少SQL或者频繁使用的字符串的数据大小。
+
+### 处理大量请求的采样
+
+我们在线门户服务有海量请求。单个服务每天处理超过200亿请求。容易跟踪这样的请求：方法是添加足够多的网络设施和服务器来跟踪请求并扩展服务器来收集数据。然后，这不是处理这种场景的合算的方法，仅仅是浪费金钱和资源。
+
+在Pinpoint，可以收集采样资料而不必跟踪每个请求。在开发环境中请求量很小，每个数据都收集。而在产品环境请求量巨大，收集小比率的数据如1~5%，足够检查整个应用的状态。有采样后，可以最小化应用的网络开销并降低诸如网络和服务器的设施费用。
+
+Pinpoint 支持计数采样，如果设置为10则只采样10分之一的请求。我们计划增加新的采样器来更有效率的收集数据。
+
+注：对应的配置项在agent下的pinpoint.config文件中，默认"profiler.sampling.rate=1"表示全部
+
+### 使用异步数据传输来最小化应用线程中止
+
+pinpoint不阻塞应用线程，因为编码后的数据或者远程消息被其他线程异步传输。
+
+#### 使用UDP传输数据
+
+和gogole dapper不同，pinpoint通过网络传输数据来确保数据速度。作为一个服务间使用的通用设施，当数据通讯持续突发时网络会成为问题。在这种情况下，pinpoint agent使用UDP协议来给服务让出网络连接优先级。
+
+数据传输API可以被替换，因为它是接口分离的。可以修改实现为用其他方式存储数据，比如本地文件。
+
+## pinpoint应用示例
+
+下图展示了当在 TomcatA 和 TomcatB 中安装pinpoint的数据。可以把单个节点的跟踪数据看成single traction，提现分布式事务跟踪的流程。
+
+![](/img/notes/opensource/naverPinpoint/example.png)
+
+下面阐述pinpoint为每个方法做了什么：
+
+1.	当请求到达TomcatA时, Pinpoint agent 产生一个 TraceId。
+	*	TX_ID: TomcatA^TIME^1
+	*	SpanId: 10
+	*	ParentSpanId: -1(Root)
+2.	从spring MVC 控制器中记录数据
+3.	插入HttpClient.execute()方法的调用并在HTTPGet中配置TraceId
+	*	创建一个子TraceId
+		*	TX_ID: TomcatA^TIME^1 -> TomcatA^TIME^1
+		*	SPAN_ID: 10 -> 20
+		*	PARENT_SPAN_ID: -1 -> 10 (父 SpanId)
+	*	在HTTP header中配置子 TraceId
+		*	HttpGet.setHeader(PINPOINT_TX_ID, "TomcatA^TIME^1")
+		*	HttpGet.setHeader(PINPOINT_SPAN_ID, "20")
+		*	HttpGet.setHeader(PINPOINT_PARENT_SPAN_ID, "10")
+4.	传输打好tag的请求到TomcatB。
+	*	TomcatB 检查传输过来的请求的header
+		*	HttpServletRequest.getHeader(PINPOINT_TX_ID)
+	*	TomcatB 作为子节点工作因为它识别了header中的TraceId
+		*	TX_ID: TomcatA^TIME^1
+		*	SPAN_ID: 20
+		*	PARENT_SPAN_ID: 10
+5.	从spring mvc控制器中记录数据并完成请求
+6.	当从tomcatB回来的请求完成时，pinpoint agent发送跟踪数据到pinpoint collector就此存储在HBase中
+7.	在对tomcatB的HTTP调用结束后，TomcatA的请求也完成了。pinpoint agent发送跟踪数据到pinpoint collector就此存储在HBase中
+8.	UI从HBase中读取跟踪数据并通过排序树来创建调用栈
+
+![](/img/notes/opensource/naverPinpoint/collector.png)
+
+## 结论
+
+pinpoint是和应用一起运行的另外的应用。使用字节码增强使得pinpoint看上去不需要代码修改。通常，字节码增强技术让应用容易造成风险。如果问题发生在pinpoint中，它会影响应用。目前，我们专注于改进pinpoint的性能和设计，而不是移除这样的威胁，因为我们任务这些让pinpoint更加有价值。因此你需要决定是否使用pinpoint。
