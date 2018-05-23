@@ -473,3 +473,114 @@ agent_gRPC/gRPC 模块支持 TLS。并且现在只有这个模块支持：
 ### 其他端口监听如何操作?
 
 请使用其他安全方式确保不能访问 VPC 区域外的其他端口，例如防火墙，代理等。
+
+## 命名空间隔离
+
+[命名空间](https://github.com/apache/incubator-skywalking/blob/master/docs/cn/Namespace-CN.md)
+
+### 版本支持
+
+5.0.0-beta +
+
+### 需求背景
+
+SkyWalking是一个用于从分布式系统收集指标的监控工具。 在实际环境中，一个非常大的分布式系统包括数百个应用程序，数千个应用程序实例。 在这种情况下，更大可能的不止一个组， 甚至还有一家公司正在维护和监控分布式系统。 他们每个人都负责不同的部分，不能共享某些指标。
+
+在这种情况下,命名空间就应运而生了,它用来隔离追踪和监控数据。
+
+### 配置命名空间
+
+#### 在探针配置中配置 agent.namespace
+
+	# The agent namespace
+	# agent.namespace=default-namespace
+	
+默认情况下 agent.namespace 是没有配置的。
+
+默认情况下,SkyWalking 设置的key是 sw3, 更多信息查看文档. 配置好 agent.namespace 之后, key 就被设置为namespace:sw3。
+
+当双方使用不同的名称空间时，跨进程传播链会中断。
+
+#### collector 中设置命名空间
+
+	configuration:
+	  default:
+		namespace: xxxxx
+		
+影响：
+
+1.	如果使用 zookeeper开启了集群模式，zookeeper的路径会变为带有命名空间前缀的的路径。
+2.	如果使用Elasticsearch 进行存储，所有的type 名称会带有命名空间的前缀。
+
+## 基于Token认证
+
+[基于Token认证](https://github.com/apache/incubator-skywalking/blob/master/docs/cn/Token-auth-CN.md)
+
+### 版本支持
+
+5.0.0-beta +
+
+### 在使用了TLS 认证之后,为何还需要基于 Token 的认证?
+
+TLS 是保证传输层的安全,保证传输的网络是可信的. 基于 token 的认证是为了保证应用的监控数据是 **可信的**。
+
+### Token
+
+在现在的版本中, Token是一个简单的字符串。
+
+#### 设置 Token
+
+在 agent.config 文件中设置 Token：
+
+	# Authentication active is based on backend setting, see application.yml for more details.
+	agent.authentication = xxxx
+	
+在 application.yml 文件中设置 token：
+
+	agent_gRPC:
+	  gRPC:
+		host: localhost
+		port: 11800
+
+		#Set your own token to active auth
+		authentication: xxxxxx
+		
+### 认证失败
+
+collector验证来自探针的每个请求，只有 token 正确，验证才能通过。
+
+如果token不正确，您将在探针端的日志看到如下日志：
+
+	org.apache.skywalking.apm.dependencies.io.grpc.StatusRuntimeException: PERMISSION_DENIED
+	
+### FAQ
+
+#### 我可以只使用token认证而不用TLS?
+
+不行。从技术层面来说，当然可以。但是token 和 TLS 用于不被信任的网络环境。在这种情况下，TLS显得更加重要，token 认证仅仅在 TLS 认证的之后才能被信任，如果在一个没有 TLS 的网络环节中，token非常容易被拦截和窃取.
+
+#### 现在skywalking是否支持其他的认证机制? 比如 ak/sk?
+
+现在还不支持，但是如果有人愿意提供这些这些新特性，我们表示感谢。
+
+# APM相关介绍资料
+
+## OpenTracing中文版
+
+### OpenTracing语义标准
+
+[OpenTracing语义标准](https://opentracing-contrib.github.io/opentracing-specification-zh/specification.html)
+
+#### 综述
+
+这是正式的OpenTracing语义标准。OpenTracing是一个跨编程语言的标准，此文档会避免具有语言特性的概念。比如，我们在文档中使用”interface”，因为所有的语言都包含”interface”这种概念。
+
+#### 版本命名策略
+
+OpenTracing标准使用Major.Minor版本命名策略（即：大版本.小版本），但不包含.Patch版本（即：补丁版本）。如果标准做出不向前兼容的改变，则使用“主版本”号提升。如果是向前兼容的改进，则进行小版本号提升，例如加入新的标准tag, log和SpanContext引用类型。
+
+#### OpenTracing数据模型
+
+OpenTracing中的Trace（调用链）通过归属于此调用链的Span来隐性的定义。 特别说明，一条Trace（调用链）可以被认为是一个由多个Span组成的有向无环图（DAG图）， Span与Span的关系被命名为References。
+
+**译者注: Span，可以被翻译为跨度，可以被理解为一次方法调用, 一个程序块的调用, 或者一次RPC/数据库访问。只要是一个具有完整时间周期的程序访问，都可以被认为是一个span.在此译本中，为了便于理解，Span和其他标准内声明的词汇，全部不做名词翻译。**
