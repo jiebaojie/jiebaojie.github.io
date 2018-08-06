@@ -588,3 +588,83 @@ Spring Cloud Security是一个验证和授权框架，可以控制哪些人可�
 ### 3.3.6 使用Spring Cloud配置服务器刷新属性
 
 Spring Boot Actuator提供了一个@RefreshScope注解，允许开发团队访问/refresh端点，这会强制Spring Boot应用程序重新读取应用程序配置。
+
+## 3.4 保护敏感的配置信息
+
+Spring Cloud Config支持使用对称加密（共享密钥）和非对称加密（公钥/私钥）。
+
+搭建Spring Cloud配置服务器以使用对称密钥的加密：
+
+1.	下载并安装加密所需要的Oracle JCE jar
+2.	创建加密密钥
+3.	加密和解密属性
+4.	配置微服务以在客户端使用加密
+
+### 3.4.1 下载并安装加密所需的Oracle JCE jar
+
+首先，需要下载Oracle的不限长度的Java加密扩展（Unlimited Strength Java Cryptography Extension, JCE）。它无法通过Maven下载，必须从Oracle公司下载。下载包含JCE jar的zip文件后，必须执行以下操作：
+
+1.	切换到$JAVA_HOME/jre/lib/security文件夹
+2.	将$JAVA_HOME/jre/lib/security目录中的local_policy.jar和US_export_policy.jar文件备份到其他位置。
+3.	解压从Oracle下载的JCE zip文件
+4.	将local_policy.jar和US_export_policy.jar复制到$JAVA_HOME/jre/lib/security目录中。
+4.	配置Spring Cloud Config以使用加密。
+
+### 3.4.2 创建加密密钥
+
+使用Spring Cloud配置服务器，对称加密密钥是通过操作系统环境变量ENCRYPT_KEY传递给服务的字符串。
+
+### 3.4.3 加密和解密属性
+
+在启动Spring Cloud Config实例时，Spring Cloud Config将检测到环境变量ENCRYPT_KEY已设置，并自动将两个新端点（/encrypt和/decrypt）添加到Spring Cloud Config服务。
+
+Spring Cloud配置服务器要求所有已加密的属性前面加上{cipher}。{cipher}告诉Spring Cloud配置服务器它正在处理已加密的值。并使用/default端点时，数据以纯文本形式公开了。
+
+	spring.datasource.password: "{cipher}858201e10fe......."
+	
+使用/default端点时，数据以纯文本形式公开了。
+
+在默认情况下，Spring Cloud Config将在服务器上解密所有属性，并将未加密的纯文本作为结果传回请求属性的应用程序。但是，开发人员可以告诉Spring Cloud Config不要在服务器上进行解密，并让应用程序负责检索配置数据以解密已加密的属性。
+
+### 3.4.4 配置微服务以在客户端使用加密
+
+要让客户端对属性进行解密，需要做以下3件事情：
+
+1.	配置Spring Cloud Config不要在服务器端解密属性：spring.cloud.config.server.encrypt.enabled=false
+2.	在许可证服务器上设置对称密钥。确保ENCRYPT_KEY环境变量与Spring Cloud Config服务器使用的对称密钥相同。
+3.	将spring-security-rsa JAR添加到许可证服务的pom.xml文件中。
+
+依赖项：
+
+	<dependency>
+		<groupId>org.springframework.security</groupId>
+		<artifactId>spring-security-rsa</artifactId>
+	</dependency>
+	
+现在访问/default端点，就会发现数据以加密形式返回。在从Spring Cloud Config加载属性时，该属性将由调用服务解密。
+
+## 3.5 最后的想法
+
+使用基于云的模型，应用程序配置数据应该与程序完全分离，并在运行时注入相应的配置数据，以便在所有环境中一致地提升相同的服务器和应用程序制品。
+
+## 3.6 小结
+
+*	Spring Cloud配置服务器允许使用环境特定值创建应用程序属性。
+*	Spring使用Spring profile来启动服务，以确定要从Spring Cloud Config服务检索哪些环境属性。
+*	Spring Cloud配置服务可以使用基于文件或基于Git的应用程序配置存储库来存储应用程序属性。
+*	Spring Cloud配置服务允许使用对称加密和非对称加密对敏感属性文件进行加密。
+
+# 第4章 服务发现
+
+本章主要内容：
+
+*	为什么服务发现对基于云的应用程序环境很重要
+*	与传统的负载均衡方法作对比，了解服务发现的优缺点
+*	建立一个Spring Netflix Eureka服务器
+*	通过Eureka注册一个基于Spring Boot的微服务
+*	使用Spring Cloud和Netflix的Ribbon库来完成客户端负载均衡
+
+服务发现对于微服务和基于云的应用程序至关重要：
+
+*	首先，它为应用团队提供了一种能力，可以快速地对在环境中运行的服务实例数量进行水平伸缩
+*	其次，它有助于提高应用程序的弹性。当微服务实例变得不健康或不可用时，大多数服务发现引擎将从内部可用服务列表中移除该实例。
