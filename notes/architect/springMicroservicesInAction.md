@@ -668,3 +668,194 @@ Spring Cloud配置服务器要求所有已加密的属性前面加上{cipher}。
 
 *	首先，它为应用团队提供了一种能力，可以快速地对在环境中运行的服务实例数量进行水平伸缩
 *	其次，它有助于提高应用程序的弹性。当微服务实例变得不健康或不可用时，大多数服务发现引擎将从内部可用服务列表中移除该实例。
+
+## 4.1 我的服务在哪里
+
+在非云的世界中，这种服务位置解析通常由DNS和网络负载均衡器的组合来解决：
+
+1.	应用程序使用通用DNS和特定于服务的路径来调用服务
+2.	负载均衡器查找托管服务的服务器的物理地址
+3.	服务部署到应用程序容器中，应用程序容器运行在持久服务器上
+4.	辅助负载均衡器检查主负载均衡器，并在必要时进行接管
+
+但对基于云的微服务应用程序来说，这种模型并不适用。原因有以下几个：
+
+*	单点故障
+*	有限的水平可伸缩性
+*	静态管理
+*	复杂
+
+## 4.2 云中的服务发现
+
+基于云的微服务环境的解决方案是使用服务发现机制，这一机制具有以下特点：
+
+*	高可用
+*	点对点
+*	负载均衡
+*	有弹性——本地缓存允许服务发现功能逐步降级
+*	容错——服务发现需要检测出服务实例什么时候是不健康的，并从可以接收客户端请求的可用服务列表中移除该实例。
+
+### 4.2.1 服务发现架构
+
+4个概念：
+
+*	服务注册——服务如何使用服务发现代理进行注册？
+*	服务地址的客户端查找——服务客户端查找服务信息的方法是什么？
+*	信息共享——如何跨节点共享服务信息？
+*	健康监测——服务如何将它的健康信息传回给服务发现代理？
+
+流程：
+
+1.	可以通过逻辑名称从服务发现代理查找服务的位置
+2.	一个服务上线时，这个服务会向服务发现代理注册它的IP地址
+3.	服务发现节点共享服务实例的健康信息
+4.	服务向服务发现代理发送心跳包。如果服务死亡，服务发现层将移除“死亡的”实例的IP
+
+一种更健壮的方法是使用所谓的客户端负载均衡。在这个模型中，当服务消费者需要调用一个服务时：
+
+1.	它将联系服务发现服务，获取它请求的所有服务实例，然后在服务消费者的机器上本地缓存数据。
+2.	每当客户端需要调用该服务时，服务消费者将从缓存中查找该服务的位置信息。通常，客户端缓存将使用简单的负载均衡算法。
+3.	然后，客户端将定期与服务发现服务进行联系，并刷新服务实例的缓存。
+
+如果在调用服务的过程中，服务调用失败，那么本地的服务发现缓存失效，服务发现客户端将尝试从服务发现代理刷新数据。
+
+### 4.2.2 使用Spring和Netflix Eureka进行服务发现实战
+
+通过许可证服务和组织服务实现客户端缓存和Eureka，可以减轻Eureka服务器上的负载，并提高Eureka不可用时的客户端稳定性：
+
+1.	当服务实例启动时，它门将使用Eureka注册它们的IP。
+2.	当许可证服务调用组织服务时，它将使用Ribbon来查看组织服务
+3.	Ribbon将定期刷新它的IP地址缓存
+
+## 4.3 构建Spring Eureka服务
+
+spirng-cloud-starter-eureka-server：告诉Maven构建包含Eureka库（其中包括Ribbon）
+
+配置：
+
+*	server.port：用于设置Eureka服务的默认端口
+*	eureka.client.registerWithEureka=false：告知服务，在Spring Boot Eureka应用程序启动时不要通过Eureka服务注册，因为它本身就是Eureka服务。
+*	eureka.client.fetchRegistry=false：Eureka服务启动时，它不会尝试本地缓存注册表信息。
+*	eureka.server.waitTimeInMsWhenSyncEmpty：在服务器接收请求之前等待的初始时间
+
+每次服务注册需要30s的时间才能显示在Eureka服务中，因为Eureka需要从服务接收3次连续心跳包ping，每次心跳包ping间隔10s，然后才能使用这个服务。
+
+@EnableEurekaServer：在Spring服务中启用Eureka服务器
+
+## 4.4 通过Spring Eureka注册服务
+
+spring-cloud-starter-eureka：拥有Spring Cloud用于与Eureka服务进行交互的jar文件，以便可以使用Eureka注册服务
+
+配置：
+
+*	spirng.application.name：将使用Eureka注册的服务的逻辑名称（建议放到bootstrp.yml文件中）
+*	eureka.instance.preferIpAddress=true：注册服务的IP，而不是服务器名称
+*	eureka.client.registerWithEureka=true：向Eureka注册服务
+*	eureka.client.fetchRegistry=true：拉取注册表的本地副本
+*	eureka.client.serviceUrl.defaultZone=http://localhost:8761/eureka/：Eureka服务的位置，包含客户端用于解析服务位置的Eureka服务的列表，该列表以逗号进行分隔。
+
+可以使用Eureka的REST API来勘察注册表的内容。要查看服务的所有实例，可以以GET方法访问端点：
+	
+	http://<eureka service>:8761/eureka/apps/<APPID>
+	
+## 4.5 使用服务发现来查找服务
+
+3个不同的Spring/Netflix客户端库，服务消费者可以使用它们来和Ribbon进行交互。从最低级别到最高级别，这些库包含了不同的与Ribbon进行交互的抽象层次。包括：
+
+*	Spring DiscoveryCiient
+*	启用了RestTemplate的Spring DiscoveryClient
+*	Netflix Feign客户端
+
+新路由：
+
+	@RequestMapping(value="/{licenseId}/{clientType}", method=RequestMethod.GET}
+	public License getLicensesWithClient(	
+		@PathVariable("organizationId") String organizationId,
+		@PathVariable("licenseId") String licenseId,
+		@PathVariable("clientType") String clientType) {
+			...
+		}
+	)
+	
+该路由上传递的clientType参数决定了我们将在代码示例中使用的客户端类型。可以在此路由上传递的具体类型包括：
+
+*	Discovery——使用DiscoveryClient和标准的Spring RestTemplate类来调用组织服务
+*	Rest——使用增强的Spring RestTemplate来调用基于Ribbon的服务
+*	Feign——使用Netflix的Feign客户端来通过Ribbon调用服务
+
+### 4.5.1 使用Spring DiscoveryClient查找服务实例
+
+Spring DiscoveryClient提供了对Ribbon和Ribbon中缓存的注册服务的最低层次访问。使用DiscoveryClient，可以查询通过Ribbon注册的所有服务以及这些服务对应的URL。
+
+@EnableDiscoveryClient注解是Spring Cloud的触发器，其作用是使应用程序能够使用DiscoveryClient和Ribbon库。
+
+	@Autowired
+	private DiscoveryClient discoveryClient;					// 用于和Ribbon交互的类
+		
+	discoveryClient.getInstances("xxx");						// 传入要查找的服务的关键字，以检索serverInstance对象的列表
+	
+	String serverUri = ...										// 构建目标URL
+	
+	restTemplate.exchange(serverUri, HttpMethod.GET,......);	// 使用标准的Spring REST模板类去调用服务
+	
+上述代码的问题：
+
+*	没有利用Ribbon的客户端负载均衡
+*	开发人员做了太多的工作
+
+### 4.5.2 使用带有Ribbon功能的Spring RestTemplate调用服务
+
+使用getRestTemplate()方法来创建支持Ribbon的Spring RestTemplate bean。
+
+	@LoadBanlanced
+	@Bean
+	public RestTemplate getRestTemplate() {
+		return new RestTemplate();
+	}
+	
+@LoadBanced注解告诉Spring Cloud创建一个支持Ribbon的RestTemplate类
+
+	restTemplate.exchange("http://{applicationid}/v1/...", httpMethod.GET, ...)
+	
+启用Ribbon的RestTemplate将解析传递给它的URL，并使用传递的内容作为服务器名称，该服务器名称作为从Ribbon查询服务实例的键。实际的服务位置和端口与开发人员完全抽象隔离。
+
+此外，通过使用RestTemplate类，Ribbon将在所有服务实例之间轮询负载均衡所有请求。
+
+### 4.5.3 使用Netflix Feign客户端调用服务
+
+NetFlix的Feign客户端是Spring启用Ribbon的RestTemplate类的替代方案。Feign库采用不同的方法来调用REST服务，方法是让开发人员首先定义一个Java接口，然后使用Spring Cloud注解来标注接口，以映射Ribbon将要调用的基于Eureka的服务。Spring Cloud框架将动态生成一个代理类，用于调用目标REST服务。除了编写接口定义，开发人员不需要编写其他调用服务的代码。
+
+@EnableFeign Clients：在代码中启用Feign客户端
+
+	@FeignClient("xxxService")
+	public interface XXXFeignClient {
+		@RequestMapping(
+			method = RequestMethod.GET,
+			value = "/v1/...,
+			consumes="application/json")
+		XXX getXXX(
+			@PathVariable("xxx") String xxx);
+			
+错误处理：通过Feign客户端，任何被调用的服务返回的HTTP状态码4xx-5xx都将映射为FeignException。
+
+## 4.6 小结
+
+*	服务发现模式用于抽象服务的物理位置。
+*	诸如Eureka这样的服务发现引擎可以在不影响服务客户端的情况下，无缝地向环境中添加和从环境中移除服务实例。
+*	通过进行服务调用的客户端中缓存服务的物理位置，客户端负载均衡可以提供额外的性能和弹性。
+*	Eureka是Netflix项目，在与Spring Cloud一起使用时，很容易对Eureka进行建立和配置。
+*	本章在Spring Cloud、Netflix Eureka和Netflix Ribbon中使用了3种不同的机制来调用服务。这些机制包括：
+	*	使用Spring Cloud服务DiscoveryClient
+	*	使用Spring Cloud和支持Ribbon的RestTemplate
+	*	使用Spring Cloud和Netflix的Feign客户端
+	
+# 第5章 使用Spring Cloud和Netflix Hystrix的客户端弹性模式
+
+本章主要内容：
+
+*	实现断路器模式、后备模式和舱壁模式
+*	使用断路器模式来保护微服务客户端资源
+*	当远程服务失败时使用Hystrix
+*	实施Hystrix的舱壁模式来隔离远程资源调用
+*	调节Hystrix的断路器和舱壁的实现
+*	定制Hystrix的并发策略
