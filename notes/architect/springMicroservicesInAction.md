@@ -859,3 +859,307 @@ NetFlix的Feign客户端是Spring启用Ribbon的RestTemplate类的替代方案�
 *	实施Hystrix的舱壁模式来隔离远程资源调用
 *	调节Hystrix的断路器和舱壁的实现
 *	定制Hystrix的并发策略
+
+当服务运行缓慢时，检测到这个服务性能不佳并绕过它时非常困难的，这是因为以下几个原因：
+
+1.	服务的降级可以以间歇性问题开始，并形成不可逆转的势头
+2.	对远程服务的调用通常是同步的，并且不会缩短长时间运行的调用
+3.	应用程序经常被设计为处理远程资源的彻底故障，而不是部分降级
+
+性能不佳的远程服务所导致的潜在问题是，它们不仅难以检测，还会触发连锁效应，从而影响整个应用程序生态系统。如果没有适当的保护措施，一个性能不佳的服务可以迅速拖垮多个应用程序。
+
+## 5.1 什么是客户端弹性模式
+
+客户端弹性软件模式的重点是，在远程服务发生错误或表现不佳时保护远程资源（另一个微服务调用或数据库查询）的客户端免于崩溃。这些模式的目标时让客户端“快速失败”，而不消耗诸如数据库连接和线程池之类的宝贵资源，并且可以防止远程服务的问题向客户端的消费者进行“上游”传播。
+
+有4种客户端弹性模式，它们分别是：
+
+1.	客户端负载均衡（client load balance）模式：服务客户端缓存在服务发现期间检索到的微服务端点
+2.	断路器（circuit breaker）模式；断路器模式确保服务客户端不会重复调用失败的服务
+3.	后备（fallback）模式；当调用失败时，后备模式询问是否有可执行的替代方案
+4.	舱壁（bulkhead）模式：舱壁模式隔离服务客户端上不同的服务调用，以确表现不佳的服务不会耗尽客户端的所有资源
+
+### 5.1.1 客户端负载均衡模式
+
+客户端负载均衡器位于服务客户端和服务消费者之间，所以负载均衡器可以检测服务实例是否抛出错误或表现不佳。如果客户端负载均衡器检测到问题，它可以从可用服务位置池中移除该服务实例，并防止将来的服务调用访问该服务实例。
+
+这正是Netflix的Ribbon库提供的开箱即用的功能，而不需要额外的配置。
+
+### 5.1.2 断路器模式
+
+断路器模式时模仿电路断路器的客户端弹性模式。当远程服务被调用时，断路器将监视这个调用。如果调用时间太长，断路器将会介入并中断调用。此外，断路器将监视所有对远程资源的调用，如果对某一个远程资源的调用失败次数足够多，那么断路器实现就会出现并采取快速失败，阻止将来调用失败的远程资源。
+
+### 5.1.3 后备模式
+
+有了后备模式，当远程服务调用失败时，服务消费者将执行替代代码路径，并尝试通过其他方式执行操作，而不是生成一个异常。这通常涉及另一数据源查找数据或将用户的请求进行排队以供将来处理。用户的调用结果不会显示为提示问题的异常，但用户可能会被告知，他们的请求要在晚些时候被满足。
+
+### 5.1.4 舱壁模式
+
+通过使用舱壁模式，可以把远程资源的调用分到线程池中，并降低一个缓慢的远程资源调用拖垮整个应用程序的风险。线程池充当服务的“舱壁”。每个远程资源都是隔离的，并分配给线程池。如果一个服务响应缓慢，那么这种服务调用的线程池就会饱和并停止处理请求，而对其他服务的服务调用则不会变得饱和，因为它们被分配给了其他线程池。
+
+## 5.2 为什么客户端弹性很重要
+
+断路器在应用程序和远程服务之间充当中间人。
+
+断路器会让少量的请求调用直达一个降级的服务，如果这些调用连续多次成功，断路器就会自动复位。
+
+断路器模式为远程调用提供的关键能力：
+
+1.	快速失败
+2.	优雅地失败
+3.	无缝回复
+
+## 5.3 进入Hystrix
+
+## 5.4 搭建许可服务器以使用Spring Cloud和Hystrix
+
+pom.xml：
+
+	<dependency>
+		<groupId>org.springframework.cloud</groupId>
+		<artifactId>spring-cloud-starter-hystrix</artifactId>
+	</dependency>
+	<dependency>
+		<groupId>com.netflix.hystrix</groupId>
+		<artifactId>hystrix-javanica</artifactId>
+		<version>1.5.9</version>
+	</dependency>
+	
+第一个依赖告诉Maven去拉取Spring Cloud Hystrix依赖项，第二个依赖标签将拉取核心Netflix Hystrix库。
+
+@EnableCircuitBreaker：告诉Spring Cloud将要为服务使用Hystrix
+
+## 5.5 使用Hystrix实现断路器
+
+两大类别的Hystrix实现：
+
+*	第一个类别：Hystrix包装的所有数据库调用
+*	第二个类别：Hystrix包装的内部服务调用
+
+Hystrix位于每个远程资源调用之间并保护客户端。
+
+	@HystrixCommand
+	public List<License> getLicensesByOrg(String organizationId) {
+		return licenseRepository.findByOrganizationId(organizationId);
+	}
+	
+@HystrixCommand注解会使用Hystrix断路器包装getLicenseByOrg()方法
+
+使用@HystrixCommand注解，在任何时候调用getLicensesByOrg()方法时，Hystrix断路器都将包装这个调用。每当调用时间超过1000ms时，断路器将中断对getLicensesByOrg()方法的调用。
+
+### 5.5.1 对组织微服务的调用超时
+
+我们可以使用方法级注解使被标记的调用拥有断路器功能，其优点在于，无论是访问数据库还是调用微服务，它都是相同的注解。
+
+在默认情况下，在指定不带属性的@HystrixCommand注解时，这个注解会将所有远程服务调用都放在同一线程池下。
+
+### 5.5.2 定制断路器的超时时间
+
+	@HystrixCommand(commandProperties = {@HystrixProperty(name = "execution.isolation.thread.timeoutInMilliseconds", value = "12000")})
+	
+## 5.6 后备处理
+
+断路器模式的一部分美妙之处在于，由于远程资源的消费者和资源本身之间存在“中间人”，因此开发人员有机会拦截服务故障，并选择替代方案。
+
+	@HystrixCommand(fallbackMethod = "buildFallbackLicenseList")
+	
+fallbackMethod属性定义了类中的一个方法，如果来自Hystrix的调用失败，那么就会调用方法
+
+## 5.7 实现舱壁模式
+
+在基于微服务的应用程序中，开发人员通常需要调用多个微服务来完成特定的任务。在不使用舱壁模式的情况下，这些调用默认时使用同一批线程来执行调用的，这些线程是为了处理整个Java容器的请求而预留的。在存在大量请求的情况下，一个服务出现性能问题会导致Java容器的所有线程被刷爆并等待处理工作，同时堵塞新请求，最终导致Java容器崩溃。舱壁模式将远程资源调用隔离在它们自己的线程池中，以便可以控制单个表现不佳的服务，而不会使该容器崩溃。
+
+Hystrix使用线程池来委派所有对远程服务的请求。在默认情况下，所有的Hystrix命令都将共享同一个线程池来处理请求。这个线程池将有10个线程来处理远程服务调用，而这些远程服务调用可以是任何东西，包括REST服务调用、数据库调用等。
+
+在应用程序中访问少量的远程资源时，这种模型运行良好，并且各个服务的调用量分布相对均匀。问题是，如果某些服务具有比其他服务高得多得请求量或更长得完成时间，那么最终可能会导致Hystrix线程池中的线程耗尽，因为一个服务最终会占据默认线程池中的所有线程。
+
+幸好，Hyxtrix提供了一种易于使用的机制，在不同的远程资源调用之间创建舱壁。
+
+*	每个远程资源调用都放置在自己的线程池中。每个线程池都有可用于处理请求的最大线程数。
+*	一个性能低下的服务只会影响同一线程池中的其他服务调用，从而限制了调用可能会造成的损害。
+
+创建舱壁：
+
+	@HystrixCommand(fallbackMethod = "buildFallbackLicenseList",
+		threadPoolKey = "licenseByOrgThreadPool",
+		threadPoolProperties = {
+			@HystrixProperty(name = "coreSize", value = "30"),
+			@HystrixProperty(name = "maxQueueSize", value = "10")}
+
+threadPoolKey属性定义线程池的唯一名称；coreSize属性用于定义线程池中线程的最大数量；maxQueueSize用于定义一个位于线程池前的队列，它可以对传入的请求进行排队，该队列将控制在线程池中线程繁忙时允许堵塞的请求数。
+
+有关maxQueueSize属性的两件事情：
+
+1.	如果将其值设置为-1，则将使用Java SynchronousQueue来保存所有传入的请求。同步队列本质上会强制要求正在处理中的请求数量永远不能超过线程池中可用线程的数量。
+2.	将maxQueueSize设置为大于1的值将导致Hystrix使用Java LinkedBlockingQueue。LinkedBlockingQueue的使用允许开发人员即使所有线程都在忙于处理请求，也能对请求进行排队。
+
+要注意的第二件事时，maxQueueSize属性只能在线程池首次初始化时设置（例如，在应用程序启动时）。Hystrix允许通过使用queueSizeRejectionThreshold属性来动态更改队列的大小，但只有在maxQueueSize属性的值大于0时，才能设置此属性。
+
+自定义线程池的适当大小是多少？Netflix推荐以下公式：
+
+	服务在健康状态时每秒支撑的最大请求数 * 第99百分位延迟时间（以秒为单位） + 用于缓冲的少量额外线程
+
+## 5.8 基础进阶——微调Hystrix
+
+Hystrix在远程资源调用失败时使用的决策过程：
+
+*	每当Hystrix命令遇到服务错误时，它将开始一个10s的计时器，用于检查服务调用失败的频率。这个10s窗口是可配置的。Hystrix做的第一件事情就是查看在10s内发生的调用数量。如果调用次数少于在这个窗口内需要发生的最小调用次数，那么即使有几个调用失败，Hystrix也不会采取行动。
+*	在10s窗口内达到最少的远程资源调用次数时，Hystrix将开始查看整体故障的百分比。如果故障的总体百分比超过阈值，Hystrix将触发断路器，使将来几乎所有的调用都失败。
+*	如果阈值超过错误阈值的百分比，Hystrix将“跳闸”断路器，防止更多的调用访问远程资源。如果远程调用失败的百分比未达到要求的阈值，并且10s窗口已过去，Hystrix将重置断路器的统计信息。
+*	当Hystrix在一个远程调用上“跳闸”断路器时，它将尝试启动一个新的活动窗口。每隔5s（这个值时可配置的），Hystrix会让一个调用到达这个苦苦挣扎的服务。如果调用成功，Hystrix将重置断路器并重新开始让调用通过。如果调用失败，Hystrix将保持断路器断开，并在另一个5s里再尝试上述步骤。
+
+基于此，开发人员可以使用5个属性来定制断路器的行为。@HystrixCommand注解通过commandPoolProperties属性公开了这5个属性。其中，threadPoolProperties属性用于设置Hystrix命令中使用的底层线程池的行为，而commandPoolProperties属性用于定制与Hystrix命令关联的断路器的行为。
+
+*	circuitBreaker.requestVolumeThreshold用于控制Hystrix考虑将断路器跳闸之前，在10s之内必须发生的连续调用数量。
+*	circuitBreaker.errorThresholdPercentage是在超过circuitBreaker.requestVolumeThreshold值之后在断路器跳闸之前必须达到的调用失败（由于超时、抛出异常或返回HTTP 500）百分比。
+*	circuitBreaker.sleepWindowInMilliseconds是在断路器跳闸之后，Hystrix允许另一个调用通过以便查看服务是否回复健康之前Hystrix休眠时间。
+*	metrics.rollingStats.timeInMilliseconds用于控制Hystrix用来监视服务调用问题窗口大小，其默认值为10000ms（即10s）。
+*	metrics.rollingStats.numBuckets控制在定义的滚动窗口中收集统计信息的次数。
+
+### 重新审视Hystrix配置
+
+在配置Hystrix环境时，需要记住的关键点是，开发人员可以使用Hystrix的3个配置级别：
+
+1.	整个应用程序级别的默认值
+2.	类级别的默认值
+3.	在类中定义的线程池级别
+
+类级属性是通过一个名为@DefaultProperties的类级别注解设置的
+
+用于创建和配置@HystrixCommand注解的所有配置值：
+
+| 属性名称 | 默认值 | 描述 |
+| -------- | ------ | ---- |
+| fallbackMethod | None | 标识类中的方法，如果远程调用超时，将调用该方法。回掉方法必须与@HystrixCommand注解在同一个类中，并且必须具有与调用类相同的方法签名。如果值不存在，Hystrix会抛出异常 |
+| threadPoolKey | None | 给予@HystrixCommand一个唯一的名称，并创建一个独立于默认线程池的线程池。如果没有定义任何值，则将使用默认的Hystrix线程池 |
+| threadPoolProperties | None | 核心的Hystrix注解属性，用于配置线程池的行为 |
+| coreSize | 10 | 设置线程池的大小 |
+| maxQueueSize | -1 | 设置线程池前面的最大队列大小。如果设置为-1，则不使用队列，Hystrix将阻塞请求，直到有一个线程可用来处理 |
+| circuitBreaker.requestVolumeThreshold | 20 | 设置Hystrix开始检查断路器是否跳闸之前滚动窗口中必须处理的最小请求数 |
+| circuitBreaker.errorThresholdPercentage | 50 | 在断路器跳闸之前，滚动窗口内必须达到的故障百分比 |
+| circuitBreaker.sleepWindowInMilliseconds | 5000 | 在断路器跳闸之后，Hystrix尝试进行服务调用之前将要等待的时间 |
+| metricsRollingStats.timeInMilliseconds | 10000 | Hystrix收集和监控服务调用的统计信息的滚动窗口（以毫秒为单位） |
+| metricsRollingStats.numBuckets | 10 | Hystrix在一个监控窗口中维护的度量桶的数量。监视窗口内的桶数越多，Hystrix在窗口内监控故障的时间越低 |
+
+## 5.9 线程上下文和Hystrix
+
+当一个@HystrixCommand被执行时，它可以使用两种不同的隔离策略——THREAD（线程）和SEMAPHORE（信号量）来运行。在默认情况下，Hystrix以THREAD隔离策略运行。用于保护调用的每个Hystrix命令都在一个单独的线程池中运行，该线程池不与父线程共享它的上下文。这意味着Hystrix可以在它的控制下中断线程的执行，而不必担心中断与执行原始调用的父线程相关的其他活动。
+
+通过基于SEMAPHORE的隔离，Hystrix管理由@HystrixCommand注解保护的分布式调用，而不需要启动一个新线程，并且如果调用超时，就会中断父线程。在同步容器服务器环境（Tomcat）中，中断父线程将导致抛出开发人员无法捕获的异常。这可能会给编写代码的开发人员带来意想不到的后果，因为他们无法捕获抛出的异常或执行任何资源清理或错误处理。
+
+要控制命令池的隔离设置，开发人员可以在自己的@HystrixCommand注解上设置commandProperties属性。如：
+
+	@HystrixCommand(
+		commandProperties = {
+			@HystrixProperty(name = "execution.islation.strategy", value = "SEMAPHORE")})
+			
+### 5.9.1 ThreadLocal与Hystrix
+
+幸运的是，Hystrix和Spring Cloud提供了一种机制，可以将父线程的上下文传播到由Hystrix线程池管理的线程。这种机制被称为HystrixConcurrencyStrategy。
+
+### 5.9.2 HystrixConcurrencyStrategy实战
+
+需要执行以下3个操作：
+
+1.	定义自定义的Hystrix并发策略类
+2.	定义一个Callable类，将UserContext注入Hystrix命令中
+3.	配置Spring Cloud以使用自定义Hystrix并发策略
+
+#### 1. 自定义Hystrix并发策略类
+
+	public class ThreadLocalAwareStrategy extends HystrixConcurrencyStrategy {
+		
+		private HystrixConcurrencyStrategy existingConcurrencyStrategy;
+		
+		...
+		
+		@Override
+		public <T> Callable<T> wrapCallable(Callable<T> callable) {
+			
+			return existingConcurrencyStrategy != null ?
+				existingConcurrencyStrategy.wrapCallable(new DelegatingUserContextCallable<T>(
+					callbale, UserContextHolder.getContext())) :
+				super.wrapCallable(
+					new DelegatingUserContextCallable<T>(
+						callable, UserContextHolder.getContext()));
+		}
+	}
+	
+首先，因为Spring Cloud已经定义了一个HystrixConcurrencyStrategy，所以所有可能被覆盖的方法都需要检查现有的并发策略是否存在，然后或调用现有的并发策略的方法或调用基类的Hystrix并发策略方法。
+
+第二件事是wrapCallable()方法。在此方法中，我们传递了Callable的实现DelegatingUserContextCallable，用来将UserContext从执行用户REST服务调用的父线程，设置为保护正在进行工作的方法的Hystrix命令线程。
+
+#### 2. 定义一个Java Callable类，将UserContext注入Hystrix命令中
+
+	public final class DelegatingUserContextCallable<V>
+		implements Callable<V> {
+	
+		private final Callable<V> delegate;
+		private UserContext originalUserContext;
+		
+		public DelegatingUserContextCallable(
+			Callable<V> delegate, UserContext userContext) {
+			this.delegate = delegate;
+			this.originalUserContext = userContext;
+		}
+		
+		public V call() throws Exception {
+			UserContextHolder.setContext(originalUserContext);
+			try {
+				return delegate.call();
+			} finally {
+				this.originalUserContext = null;
+			}
+		}
+		
+		public static <V> Callable<V> create(Callable<V> delegate, UserContext userContext) {
+			return new DelegatingUserContextCallable<V>(delegate, userContext);
+		}
+	}
+	
+当调用Hystrix保护的方法时，Hystrix和Spring Cloud将实例化DelegatingUserContextCallable类的一个实例，传入一个通常由Hystrix命令池管理的线程调用的Callable类。
+
+除了委托的Callable类之外，Spring Cloud也将UserContext对象从发起调用的父线程传递出去。这两个值在创建DelegatingUserContextCallable实例时设置，实际的操作将发生在类的call()方法中。
+
+#### 3. 配置Spring Cloud以使用自定义Hystrix并发策略
+
+## 5.10 小结
+
+*	在涉及高分布式应用程序（如基于微服务的应用程序）时，必须考虑客户端弹性。
+*	服务的彻底故障（如服务器崩溃）是很容易检测和处理的。
+*	一个性能不佳的服务可能会引起资源耗尽的连锁效应，因为调用客户端中的线程被阻塞，以等待服务完成。
+*	3种核心客户端弹性模式分别是断路器模式、后备模式和舱壁模式。
+*	断路器模式试图杀死运行缓慢和降级的系统调用，这样调用就会快速失败，并防止资源耗尽。
+*	后备模式允许开发人员在远程服务调用失败或断路器跳闸的情况下，定义替代代码路径。
+*	舱壁模式通过将对远程服务的调用隔离到它们自己的线程池中，使远程资源调用彼此分离。就算一组服务调用失败，这些失败也不会导致应用程序容器中的所有资源耗尽。
+*	Spring Cloud和Netflix Hystrix库提供断路器模式、后备模式和舱壁模式的实现。
+*	Hystrix库是高度可配置的，可以在全局、类和线程池级别设置。
+*	Hystrix支持两种隔离模型，即THREAD和SEMPHORE。
+*	Hystrix默认隔离模型THREAD完全隔离Hystrix保护的调用，但不会将父线程的上下文传播到Hystrix管理的线程。
+*	Hystrix的另一种隔离模型SEMAPHORE不使用单独的线程进行Hystrix调用。虽然这更有效率，但如果Hystrix中断了调用，它会让服务变得不可预测。
+*	Hystrix允许通过自定义HystrixConcurrencyStrategy实现，将父线程上下文注入Hystrix管理的线程中。
+
+# 第6章 使用Spring Cloud和Zuul进行服务路由
+
+本章主要内容：
+
+*	结合微服务使用服务网关
+*	使用Spring Cloud和Netflix Zuul实现服务网关
+*	在Zuul中映射微服务路由
+*	构建过滤器以使用关联ID并进行跟踪
+*	使用Zuul进行动态路由
+
+在像微服务架构这样的分布式架构中，需要确保跨多个服务调用的关键行为的正常运行，如安全、日志记录和用户跟踪。要实现此功能，开发人员需要在所有服务中始终如一地强制这些特征，而不需要每个开发团队都构建自己的解决方案。使用公共库和框架的问题：
+
+*	第一，在构建的每个服务中很难始终实现这些功能。
+*	第二，正确地实现这些功能是一个挑战。
+*	第三，这会在所有服务中创建一个顽固的依赖。
+
+为了解决这个问题，需要将这些横切关注点抽象成一个独立且作为应用程序中所有微服务调用的过滤器和路由器的服务。这种横切关注点被称为服务网关（service gateway）。服务客户端不再直接调用服务。取而代之的是，服务网关作为单个策略执行点（Policy Enforcement Point, PEP），所有调用都通过服务网关进行路由，然后被路由到最终目的地。
+
+使用Spring Cloud和Zuul来完成以下操作：
+
+*	将所有服务调用放在一个URL后面，并使用服务发现将这些调用映射到实际的服务实例。
+*	将关联ID注入流经服务网关的每个服务调用中。
+*	在从客户端发回的HTTP响应中注入关联ID。
+*	构建一个动态路由机制，将各个具体的组织路由到服务实例端点，该端点与其他人使用的服务实例端点不同。
