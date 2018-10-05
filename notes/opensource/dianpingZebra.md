@@ -8,7 +8,7 @@ date: 2018-10-03 00:00:00
 
 ---
 
-GitHub地址：[https://github.com/dianping/zebra/](https://github.com/dianping/zebra)
+GitHub地址：[https://github.com/dianping/zebra/](https://github.com/dianping/zebra/)
 
 
 *   目录

@@ -3,7 +3,7 @@ layout: post
 notes: true
 subtitle: "【开源代码】Apache SkyWalking"
 comments: false
-author: "apache"
+author: "Apache"
 date: 2018-05-05 00:00:00
 
 ---
