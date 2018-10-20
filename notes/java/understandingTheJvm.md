@@ -324,3 +324,6 @@ DirectMemory容量可通过-XX: MaxDirectMemorySize指定，如果不指定，�
 2.	另一个是空间问题，标记清除之后会产生大量不连续的内存碎片，空间碎片太多可能会导致以后在程序运行过程中需要分配较大对象时，无法找到足够的连续内存而不得不提前触发另一次垃圾收集动作。
 
 ![](/img/notes/java/understandingTheJVM/mark_sweep.jpg)
+
+### 3.3.2 复制算法
+
