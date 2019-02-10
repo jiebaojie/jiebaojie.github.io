@@ -1163,3 +1163,163 @@ Hystrix在远程资源调用失败时使用的决策过程：
 *	将关联ID注入流经服务网关的每个服务调用中。
 *	在从客户端发回的HTTP响应中注入关联ID。
 *	构建一个动态路由机制，将各个具体的组织路由到服务实例端点，该端点与其他人使用的服务实例端点不同。
+
+## 6.1 什么是服务网关
+
+没有服务网关的后果：当服务客户端直接调用服务时，除了让每个服务直接在服务中实现横切关注点的逻辑，开发人员没有办法轻易实现诸如安全性或日志记录之类的横切关注点。
+
+服务网关充当服务客户端和被调用的服务之间的中介。服务客户端仅与服务网关管理的单个URL进行对话。服务网关从服务客户端调用中分离出路径，并确定服务客户端正在尝试调用哪个服务。
+
+由于服务网关位于客户端到各个服务的所有调用之间，因此它还充当服务调用的中央策略执行点（PEP）。使用集中式PEP意味着横切服务网关中实现的横切关注点包括以下几个：
+
+*	静态路由——服务网关将所有的服务调用放置在单个URL和API路由的后面。
+*	动态路由——服务网关可以检查传入的服务请求，根据来自传入请求的数据和服务调用者的身份执行智能路由。
+*	验证和授权——由于所有服务调用都经过服务网关进行路由，所以服务网关是检查服务调用者是否已经进行了验证并被授权进行服务调用的自当然场所。
+*	度量数据收集和日志记录——当服务调用通过服务网关时，可以使用服务网关来收集数据和日志信息，还可以使用服务网关确保在用户请求上提供关键信息以确保日志统一。
+
+在构建服务网关时，要牢记以下几点：
+
+*	在单独的服务组前面，负载均衡器仍然很有用。在这种情况下，将负载均衡器放到多个服务网关实例前面的是一个恰当的设计，它确保服务网关实现可以伸缩。
+*	要保持为服务网关编写的代码是无状态的。
+*	要保持为服务网关编写的代码是轻量级的。
+
+## 6.2 Spring Cloud和Netflix Zuul简介
+
+Spring Cloud集成了Netflix开源项目Zuul。Zuul是一个服务网关，它非常容易通过Spring Cloud注解进行创建和使用。Zuul提供了许多功能，具体包括以下几个：
+
+*	将应用程序中的所有服务的路由映射到一个URL——Zuul不局限于一个URL。在Zuul中，开发人员可以定义多个路由条目，使路由映射非常细粒度（每个服务端点都有自己的路由映射）。然而，Zuul最常见的用例是构建一个单一的入口点，所有服务客户端调用都经过这个入口点。
+*	构建可以对通过网关的请求进行检查和操作的过滤器——这些过滤器允许开发人员在代码中注入策略执行点，以一致的方式对所有服务调用执行大量的操作。
+
+要开始使用Zuul，需要完成下面3件事：
+
+1.	建立一个Zuul Spring Boot项目，并配置适当的Maven依赖项。
+2.	使用Spring Cloud注解修改这个Spring Boot项目，将其声明为Zuul服务。
+3.	配置Zuul以便Eureka进行通信（可选）。
+
+### 6.2.1 建立一个Zuul Spring Boot项目
+
+在Maven中建立Zuul只需要很少的步骤，只需要在pom.xml文件中定义一个依赖项：
+
+	<dependency>
+		<groupId>org.springframework.cloud</groupId>
+		<artifactId>spring-cloud-starter-zuul</artifactId>
+	</dependency>
+	
+这个依赖项告诉Spring Cloud框架，该服务将运行Zuul，并适当地初始化Zuul。
+
+### 6.2.2 为Zuul服务使用Spring Cloud注解
+
+只需要一个注解：@EnableZuulProxy，使服务称为一个Zuul服务器
+
+另一个注解@EnableZuulServer，使用此注解将创建一个Zuul服务器，它不会加载任何Zuul反向代理过滤器，也不会使用Netflix Eureka进行服务发现。开发人员想要构建自己的路由服务，而不使用任何Zuul预置的功能时会使用@EnableZuulServer。
+
+### 6.2.3 配置Zuul与Eureka进行通信
+
+Zuul代理服务器默认设计为在Spring产品上工作。因此，Zuul将自动使用Eureka来通过服务ID查找服务，然后使用Netflix Ribbon对来自Zuul的请求进行客户端负载均衡。
+
+	eureka:
+		instance:
+			preferIpAddress: true
+		client:
+			registerWithEureka: true
+			fetchRegistry: true
+			serviceUrl:
+				defaultZone: http://localhost:8761/eureka/
+				
+## 6.3 在Zuul中配置路由
+
+Zuul的核心是一个反向代理。反向代理负责捕获客户端的请求，然后代表客户端调用远程资源。
+
+在微服务架构的情况下，Zuul（反向代理）从客户端接收微服务调用并将其转发给下游服务。服务客户端认为它只与Zuul通信。Zuul要与下游服务进行沟通，Zuul必须知道如何将进来的调用映射到下游路由。Zuul有几种机制来做到这一点，包括：
+
+*	通过服务发现自动映射路由
+*	使用服务发现手动映射路由
+*	使用静态URL手动映射路由
+
+### 6.3.1 通过服务发现自动映射路由
+
+Zuul可以根据其服务ID自动路由请求，而不需要配置。如果没有指定任何路由，Zuul将自动使用正在调用的服务的Eureka服务ID，并将其映射到下游服务实例。
+
+### 6.3.2 使用服务发现手动映射路由
+
+Zuul允许开发人员更细粒度地明确定义路由映射，而不是单纯依赖服务的Eureka服务ID创建的自动路由。
+
+	zuul:
+		routes:
+			organizationservice: /organization/**
+			
+在使用自动路由映射时，Zuul只基于Eureka服务ID来公开服务，如果服务的实例没有在运行，Zuul将不会公开该服务的路由。然而，如果在没有使用Eureka注册服务实例的情况下，手动将路由映射到服务发现ID，那么Zuul仍然会显示这条路由。如果尝试为不存在的服务调用路由，Zuul将返回500错误。
+
+如果想要排除Eureka服务ID路由的自动映射，只提供自定义的组织服务路由，可以向application.yml文件添加一个额外的Zuul参数ignored-services。
+
+	zuul:
+		ignored-services: 'organizationservice'
+		routes:
+			organizationservice: /organization/**
+			
+如果要排除所有基于Eureka的路由，可以将ignored-services属性设置为"*"。
+
+服务网关的一种常见的模式是通过使用/api之类的标记来为所有的服务调用添加前缀，从而区分API路由与内容路由。Zuul通过在Zuul配置中使用prefix属性来支持这项功能。
+
+	zuul:
+		ignored-services: '*'
+		prefix: /api
+		routes:
+			organizationservice: /organization/**
+			licensingservice: /licensing/**
+			
+### 6.3.3 使用静态URL手动映射路由
+
+Zuul可以用来路由那些不受Eureka管理的服务。在这种情况下，可以建立Zuul直接路由到一个静态定义的URL。
+
+	zuul:
+		routes:
+			licensestatic:		#Zuul用于在内部识别服务的关键字
+				path: /licensestatic/**			#许可证服务的静态路由
+				url: http://licenseservice-static:8081			#已建立许可证服务的静态实例，它将被直接调用，而不是由zuul通过Eureka调用
+				
+现在，licensestatic端点不再使用Eureka，而是直接将请求路由到http://licenseservice-static:8081端点。这里存在一个问题，那就是通过绕过Eureka，只有一条路径可以用来指向请求。幸运的是，开发人员可以手动配置Zuul来禁用Ribbon与Eureka集成，然后列出Ribbon将进行负载均衡的各个服务实例。
+
+	zuul:
+		routes:
+			licensestatic:				#定义一个服务ID，该服务ID将用于在Ribbon中查找服务
+				path: /licensestatic/**
+				serviceId: licensestatic
+	ribbon:
+		eureka:
+			enabled: false				#在Ribbon中禁用Eureka支持
+	licensestatic:
+		ribbon:
+			listOfServers: http://licenseservice-static1:8081,http://licenseservice-static2:8082		#指定请求会路由到的服务器列表
+			
+静态映射器路由并在Ribbon中禁用Eureka支持会造成一个问题，那就是禁用了对通过Zuul服务网关运行的所有服务的Ribbon支持。这意味着Eureka服务器将承受更多的负载，因为Zuul无法使用Ribbon来缓存服务的查找。缺少了Ribbon，Zuul每次需要解析服务的位置时都会调用Eureka。
+
+### 6.3.4 动态重新加载路由配置
+
+动态重新加载路由的功能非常有用，因为它允许在不回收Zuul服务器的情况下更改路由的映射。
+
+Zuul公开了基于POST的端点路由/refresh，其作用是让Zuul重新加载路由配置。
+
+### 6.3.5 Zuul和服务超时
+
+Zuul使用Netflix的Hystrix和Ribbon库，来帮助防止长时间运行的服务调用影响服务网关的性能。在默认情况下，对于任何需要用超过1s的实践（这是Hystrix默认值）来处理请求的调用，Zuul将终止并返回一个HTTP 500错误。幸运的是，开发人员可以通过在Zuul服务器的配置中设置Hystrix超时属性来配置此行为。
+
+	hystrix.command.default.execution.isolation.thread.timeoutInMilliseconds: 2500
+	
+也可以需要为特定服务设置Hystrix超时：
+
+	hystrix.command.licensingservice.execution.isolation.thread.timeoutInMilliseconds: 3000
+	
+虽然已经覆盖了Hystrix的超时，Netflix Ribbon同样会超时任何超过5s的调用。可以通过设置属性servicename.ribbon.ReadTimeout来覆盖Ribbon超时。
+
+## 6.4 Zuul的真正威力：过滤器
+
+横切关注点：通过这种方式，Zuul过滤器可以按照与J2EE servlet过滤器或Spring Aspect类似的方式来使用。
+
+Zuul允许开发人员使用Zuul网关内的过滤器构建自定义逻辑。过滤器可用于实现每个服务请求在执行时都会经过的业务逻辑链。
+
+Zuul支持以下3种类型的过滤器：
+
+*	前置过滤器——前置过滤器在Zuul将实际请求发送到目的地之前被调用。前置过滤器通常执行确保服务具有一致的消息格式（例如，关键的HTTP首部是否设置妥当）的任务，或者充当看门人，确保调用该服务的用户已通过验证（他们的身份与他们声称的一致）和授权（他们可以做他们请求做的）。
+*	后置过滤器——后置过滤器在目标服务器被调用并将响应发送回客户端后被调用。通常后置过滤器会用来记录从目标服务返回的响应，处理错误或审核对敏感信息的响应。
+*	路由过滤器——路由过滤器用于在调用目标服务之前拦截调用。通常使用路由过滤器来确定是否需要进行某些级别的动态路由，如灰度路由控制。
